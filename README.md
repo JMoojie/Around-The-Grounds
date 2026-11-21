@@ -88,7 +88,7 @@ Then on the Pi:
 
 ```
 sudo apt-get update && sudo apt-get install -y git
-git clone https://github.com/<your-account>/around-the-grounds.git
+git clone https://github.com/JMoojie/Around-The-Grounds.git around-the-grounds
 cd around-the-grounds
 sudo ./deploy/pi/setup.sh
 ```
@@ -117,7 +117,7 @@ If the GitHub repo is **private**, the Pi needs permission to read it. Either:
 make the repo public (it holds no personal data), or add a read-only deploy key:
 on the Pi run `ssh-keygen -t ed25519` (press Enter to everything), add the
 contents of `~/.ssh/id_ed25519.pub` under the repo's *Settings › Deploy keys*,
-and clone with `git clone git@github.com:<your-account>/around-the-grounds.git`.
+and clone with `git clone git@github.com:JMoojie/Around-The-Grounds.git around-the-grounds`.
 
 ### Handy commands (on the Pi)
 
