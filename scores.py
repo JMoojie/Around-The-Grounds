@@ -1,0 +1,329 @@
+"""Around the Grounds: the club's games and scores, straight from PlayCricket.
+
+Read only: nothing is stored. ``board`` returns either today's games (with
+full batting and bowling cards for games being played) or, on a day without
+games, the latest results and the next match day's fixtures.
+"""
+
+import threading
+from datetime import datetime
+
+import config
+import playcricket as pc
+
+try:
+    from zoneinfo import ZoneInfo
+
+    CLUB_TIMEZONE = ZoneInfo(config.TIMEZONE)
+except Exception:  # pragma: no cover - no timezone data installed
+    CLUB_TIMEZONE = None
+
+# How long PlayCricket responses are reused, in seconds.
+TEAMS_MAX_AGE = 6 * 60 * 60      # the club's teams and grades for the season
+FIXTURES_MAX_AGE = 15 * 60       # each grade's fixture list (finds today's games)
+SCORES_MAX_AGE = 90              # a game being played today
+RESULT_MAX_AGE = 60 * 60         # a game already finished
+
+CLUB_PREFIXES = (config.CLUB_NAME + " ", config.CLUB_NAME)
+STATE_ORDER = {"live": 0, "upcoming": 1, "done": 2, "unscored": 3, "off": 4}
+
+_lock = threading.Lock()
+
+
+def _now():
+    return datetime.now(CLUB_TIMEZONE) if CLUB_TIMEZONE else datetime.now()
+
+
+def _local(start):
+    """A PlayCricket start time as a local datetime (None if unreadable)."""
+    try:
+        parsed = datetime.fromisoformat(str(start or "").replace("0000000", "000"))
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(str(start)[:19])
+        except ValueError:
+            return None
+    if parsed.tzinfo is not None and CLUB_TIMEZONE is not None:
+        parsed = parsed.astimezone(CLUB_TIMEZONE)
+    return parsed
+
+
+def _clock(moment):
+    return moment.strftime("%I:%M %p").lstrip("0").lower() if moment else ""
+
+
+def _starts(record):
+    return [moment for moment in (_local(item.get("startDateTime"))
+                                  for item in (record.get("matchSchedule") or [])) if moment]
+
+
+def is_today(record, today):
+    """Scheduled today, or a game still in progress from an earlier day."""
+    if any(moment.date() == today for moment in _starts(record)):
+        return True
+    return str(record.get("status") or "").upper() == "LIVE" and any(
+        moment.date() < today for moment in _starts(record))
+
+
+def team_label(name):
+    """'<club name> U13 Mixed' -> 'U13 Mixed'."""
+    text = str(name or "").strip()
+    for prefix in CLUB_PREFIXES:
+        if text.startswith(prefix) and text[len(prefix):].strip():
+            return text[len(prefix):].strip()
+    return text
+
+
+def _is_club(team, club_team_ids):
+    organisation = (team.get("owningOrganisation") or {}).get("id")
+    return organisation == config.CLUB_ID or str(team.get("id")) in club_team_ids
+
+
+def _overs(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return f"{number:g}"
+
+
+def _innings_score(inning):
+    """'5/70' (wickets/runs, Australian style), '59' when all out, '6/180d' declared."""
+    runs = inning.get("runsScored") or 0
+    wickets = inning.get("numberOfWicketsFallen") or 0
+    all_out = str(inning.get("inningsCloseType") or "").casefold() == "all out" or wickets >= 10
+    text = f"{runs}" if all_out else f"{wickets}/{runs}"
+    return text + ("d" if inning.get("isDeclared") else "")
+
+
+def _score_text(text):
+    """PlayCricket's summary score '5-70' -> '5/70'."""
+    text = str(text or "").strip()
+    return text.replace("-", "/") if text else ""
+
+
+def _state(status, record, scorecard):
+    status = str(status or "").upper()
+    if status == "LIVE":
+        return "live"
+    if status in ("COMPLETED", "FORFEIT"):
+        return "done"
+    if status in ("ABANDONED", "CANCELLED", "POSTPONED"):
+        return "off"
+    # PENDING once play has started: finished, awaiting the result being confirmed.
+    if (scorecard or {}).get("innings") or any(
+            str(team.get("scoreText") or "").strip() for team in record.get("teams") or []):
+        return "done"
+    return "upcoming"
+
+
+def _at_the_crease(innings):
+    """Batters in and bowler on in the innings being played."""
+    if not innings:
+        return [], None
+    current = innings[-1]
+    batting = current.get("batting") or []
+    on_strike = [b for b in batting if b.get("isOnStrike") or b.get("isOnNonStrike")]
+    if not on_strike:
+        on_strike = [b for b in batting if str(b.get("dismissalType") or "").casefold() == "not out"]
+    batters = [
+        {"name": b.get("playerShortName") or "", "runs": b.get("runsScored") or 0,
+         "balls": b.get("ballsFaced") or 0, "strike": bool(b.get("isOnStrike"))}
+        for b in sorted(on_strike, key=lambda b: not b.get("isOnStrike"))[:2]
+    ]
+    bowler = next((b for b in current.get("bowling") or [] if b.get("isBowling")), None)
+    if bowler:
+        bowler = {"name": bowler.get("playerShortName") or "", "overs": _overs(bowler.get("oversBowled")),
+                  "wickets": bowler.get("wicketsTaken") or 0, "runs": bowler.get("runsConceded") or 0}
+    return batters, bowler
+
+
+def _balls(overs):
+    try:
+        whole, _, part = f"{float(overs):.1f}".partition(".")
+        return int(whole) * 6 + int(part)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _innings_detail(inning, names, in_progress):
+    """Batting and bowling card of one innings, for the big live view."""
+    batting = []
+    for b in inning.get("batting") or []:
+        how = str(b.get("dismissalType") or "")
+        not_out = how.casefold() == "not out"
+        batting.append({
+            "name": b.get("playerShortName") or "", "runs": b.get("runsScored") or 0,
+            "balls": b.get("ballsFaced") or 0, "fours": b.get("foursScored") or 0,
+            "sixes": b.get("sixesScored") or 0,
+            "out": "not out" if not_out else (b.get("dismissalText") or how).replace(": ", " "),
+            "dismissed": not not_out and "retired" not in how.casefold(),
+            "in": bool(b.get("isOnStrike") or b.get("isOnNonStrike")), "strike": bool(b.get("isOnStrike")),
+        })
+    if in_progress and not any(b["in"] for b in batting):
+        for b in batting:
+            b["in"] = b["out"] == "not out"
+    bowling = [
+        {"name": b.get("playerShortName") or "", "overs": _overs(b.get("oversBowled")),
+         "maidens": b.get("maidensBowled") or 0, "runs": b.get("runsConceded") or 0,
+         "wickets": b.get("wicketsTaken") or 0, "now": bool(b.get("isBowling")) and in_progress}
+        for b in inning.get("bowling") or []
+    ]
+    fall = (inning.get("fallOfWickets") or [])
+    last = max(fall, key=lambda f: f.get("order") or 0) if fall else None
+    last_batter = next((b for b in batting if last and b["name"] == last.get("playerShortName")), None)
+    balls = _balls(inning.get("oversBowled"))
+    team_id = str(inning.get("battingTeamId"))
+    return {
+        "team_id": team_id, "team": names.get(team_id, ""),
+        "score": _innings_score(inning), "overs": _overs(inning.get("oversBowled")),
+        "extras": inning.get("totalExtras") or 0,
+        "run_rate": f"{(inning.get('runsScored') or 0) * 6 / balls:.2f}" if balls else "",
+        "last_wicket": (f"{last.get('playerShortName')} {last_batter['runs'] if last_batter else ''}".strip()
+                        + f" at {last.get('order')}/{last.get('runs')}") if last else "",
+        "batting": batting, "bowling": bowling, "in_progress": in_progress,
+    }
+
+
+def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", today=None):
+    """One game for the screen, from its fixture record and (optional) scorecard."""
+    team_names = team_names or {}
+    summary_teams = {str(t.get("id")): t for t in ((scorecard or {}).get("matchSummary") or {}).get("teams") or []}
+    innings = (scorecard or {}).get("innings") or []
+    sides = []
+    for team in record.get("teams") or []:
+        team_id = str(team.get("id"))
+        summary = summary_teams.get(team_id, {})
+        own = [i for i in innings if str(i.get("battingTeamId")) == team_id]
+        if own:
+            score = " & ".join(_innings_score(i) for i in own)
+            overs = _overs(own[-1].get("oversBowled"))
+        else:
+            score = _score_text(summary.get("scoreText") or team.get("scoreText"))
+            overs = _overs(team.get("oversBowled")) if score else ""
+        ours = _is_club(team, club_team_ids)
+        name = team.get("displayName") or team.get("name") or ""
+        sides.append({
+            "id": team_id,
+            "name": team_label(team_names.get(team_id) or name) if ours else name,
+            "ours": ours, "score": score, "overs": overs,
+            "batting": bool(summary.get("isBatting", team.get("isBatting"))),
+            "home": bool(team.get("isHome")),
+        })
+    # Our team first.
+    sides.sort(key=lambda side: not side["ours"])
+    state = _state((scorecard or {}).get("status") or record.get("status"), record, scorecard)
+    starts = sorted(_starts(record))
+    if state == "upcoming" and starts and _now() > starts[-1]:
+        state = "unscored"  # under way (or over), but nobody is scoring it on PlayCricket
+    batters, bowler = _at_the_crease(innings) if state == "live" else ([], None)
+    names = {side["id"]: side["name"] for side in sides}
+    detail = ([_innings_detail(i, names, n == len(innings) - 1 and str(i.get("inningsCloseType") or "").casefold()
+                               in ("in progress", ""))
+               for n, i in enumerate(innings)] if state == "live" else [])
+    today = today or _now().date()
+    day = next((n for n, moment in enumerate(starts, 1) if moment.date() == today), 0) if len(starts) > 1 else 0
+    venue = record.get("venue") or {}
+    ground = " · ".join(str(part).strip() for part in
+                        (venue.get("name"), (venue.get("playingSurface") or {}).get("name")) if str(part or "").strip())
+    result = ((scorecard or {}).get("matchSummary") or {}).get("resultText") or record.get("resultText") or ""
+    return {
+        "id": record.get("id"),
+        "team": sides[0]["name"] if sides else "",
+        "grade": ((scorecard or {}).get("grade") or record.get("grade") or {}).get("name") or grade_name,
+        "round": (record.get("round") or {}).get("name", ""),
+        "state": state,
+        "start": _clock(starts[day - 1] if day else starts[0]) if starts else "",
+        "start_sort": starts[0].isoformat() if starts else "",
+        "day": day,  # 1 or 2 for a two-day game, else 0
+        "venue": ground,
+        "home": bool(sides and sides[0]["home"]),
+        "sides": sides,
+        "result": result,
+        "batters": batters,
+        "bowler": bowler,
+        "innings": detail,  # live games only: each innings' batting and bowling card
+    }
+
+
+def _club_grades():
+    """(grade ids, club team ids, {team id: club team name}, {grade id: name}) for the current season."""
+    seasons = pc.fetch_organisation_seasons(config.CLUB_ID, max_age=TEAMS_MAX_AGE).get("seasons") or []
+    grade_ids, team_ids, names, grade_names = [], set(), {}, {}
+    for season in seasons[:1]:  # the newest season comes first
+        teams = pc.fetch_organisation_teams(config.CLUB_ID, season["id"],
+                                            max_age=TEAMS_MAX_AGE).get("teams") or []
+        for team in teams:
+            team_ids.add(str(team.get("id")))
+            names[str(team.get("id"))] = team.get("name") or ""
+            for grade in team.get("grades") or ([team["grade"]] if team.get("grade") else []):
+                if grade.get("id") and grade.get("isCurrent", True) is not False and grade["id"] not in grade_ids:
+                    grade_ids.append(grade["id"])
+                    grade_names[grade["id"]] = grade.get("name") or ""
+    return grade_ids, team_ids, names, grade_names
+
+
+def _first_day(record):
+    starts = sorted(_starts(record))
+    return starts[0].date() if starts else None
+
+
+def _club_fixtures():
+    """Every one of the club's fixtures this season: [(record, team ids, names, grade name)]."""
+    grade_ids, team_ids, names, grade_names = _club_grades()
+    fixtures, seen = [], set()
+    for grade_id in grade_ids:
+        for record in pc.fetch_grade_matches(grade_id, max_age=FIXTURES_MAX_AGE).get("matches") or []:
+            if record.get("id") in seen or not any(_is_club(t, team_ids) for t in record.get("teams") or []):
+                continue
+            seen.add(record.get("id"))
+            fixtures.append((record, grade_names.get(grade_id, "")))
+    return fixtures, team_ids, names
+
+
+def _with_scorecard(record):
+    status = str(record.get("status") or "").upper()
+    if status in ("ABANDONED", "CANCELLED", "UPCOMING"):
+        return None
+    try:
+        return pc.fetch_match_scorecard(record["id"], max_age=RESULT_MAX_AGE if status == "COMPLETED"
+                                        else SCORES_MAX_AGE)
+    except Exception:
+        return None  # the fixture's own summary score still shows
+
+
+def _ordered(games):
+    return sorted(games, key=lambda g: (STATE_ORDER.get(g["state"], 9), g["start_sort"], g["team"]))
+
+
+def board(today=None):
+    """{"mode": "today", "games": [...]} on a match day, otherwise
+    {"mode": "between", "results": [...], "results_day": date, "coming": [...], "coming_day": date}.
+    Raises on network errors."""
+    today = today or _now().date()
+    with _lock:  # several screens asking at once share one set of fetches
+        fixtures, team_ids, names = _club_fixtures()
+        todays = [(r, g) for r, g in fixtures if is_today(r, today)]
+        if todays:
+            return {"mode": "today", "games": _ordered(
+                summarise(r, _with_scorecard(r), team_ids, names, g, today) for r, g in todays)}
+        past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
+        future = [d for d in (_first_day(r) for r, _ in fixtures) if d and d > today]
+        results_day, coming_day = (max(past) if past else None), (min(future) if future else None)
+        # Results come from the fixture list's own scores: no scorecards needed.
+        results = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+                   if results_day and _first_day(r) == results_day]
+        coming = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+                  if coming_day and _first_day(r) == coming_day]
+    return {"mode": "between", "results": _ordered(results), "results_day": results_day,
+            "coming": _ordered(coming), "coming_day": coming_day}
+
+
+def live_board():
+    """``board()`` plus when it was checked, or {"error": ...} when PlayCricket can't be reached."""
+    try:
+        result = board()
+    except Exception as error:  # offline, PlayCricket down, unexpected reply
+        return {"error": f"Couldn't reach PlayCricket ({type(error).__name__})", "checked": _clock(_now())}
+    result["checked"] = _clock(_now())
+    return result
