@@ -17,7 +17,9 @@ scores straight from PlayCricket. It stores nothing and needs only Wi-Fi.
 - **Any club:** each box is set up from a phone at `/setup`: paste the link
   to the club's PlayCricket page and it finds the club, its team names and logo.
   Then choose colours, heading, logo, which pages to show, and **sponsor
-  slides** that come up between pages.
+  slides** that come up between pages: upload an image, or type the sponsor's
+  website address and the box makes a slide from it (name, logo, brand colour
+  and a line about them), to check and adjust before it's added.
 - **No Wi-Fi yet?** The box opens its own setup Wi-Fi and the TV says how to
   connect to it and choose the club's network.
 

@@ -451,8 +451,18 @@ table.card-table tr.in td { background: color-mix(in srgb, var(--accent) 12%, tr
 .sponsor { position: absolute; inset: 0; background: var(--bg); display: none; flex-direction: column;
            align-items: center; justify-content: center; gap: 30px; z-index: 5; }
 .sponsor.on { display: flex; }
-.sponsor img { max-width: 1600px; max-height: 820px; object-fit: contain; }
-.sponsor p { margin: 0; font-size: 34px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
+.sponsor > p { margin: 0; font-size: 34px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
+.sponsor-body { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.sponsor-image { max-width: 1600px; max-height: 780px; object-fit: contain; }
+.sponsor-name { margin: 0; font-size: 40px; color: var(--text); }
+.sponsor-card { width: 1600px; height: 800px; border-radius: 28px; display: flex; flex-direction: column;
+                align-items: center; justify-content: center; gap: 26px; padding: 50px 80px; text-align: center;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); }
+.sc-logo { max-width: 1100px; max-height: 380px; object-fit: contain; }
+.sc-name { font-size: 64px; font-weight: 800; }
+.sc-name-big { font-size: 120px; }
+.sc-tag { font-size: 40px; max-width: 1350px; opacity: 0.85; }
+.sc-web { font-size: 40px; font-weight: 700; letter-spacing: 1px; opacity: 0.9; }
 /* Noto Sans is installed on the Pi; Segoe UI is the Windows look. */
 body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; }
 """
@@ -503,8 +513,7 @@ SCRIPT = """
     turns += 1;
     if (sponsors.length && every > 0 && turns % every === 0) {
       const sponsor = sponsors[sponsorAt % sponsors.length]; sponsorAt += 1;
-      sponsorBox.querySelector("img").src = sponsor.url;
-      sponsorBox.querySelector("span").textContent = sponsor.name || "";
+      sponsorBox.querySelector(".sponsor-body").innerHTML = sponsor.html;
       sponsorBox.classList.add("on");
       setTimeout(() => { sponsorBox.classList.remove("on"); show(page + 1); }, sponsorSeconds * 1000);
       return;
@@ -562,7 +571,7 @@ def render_page():
     <header class="slide-head"><h1 id="title">{escape(settings["title"])}</h1></header>
     <div class="slide-body" id="board">{render_board(None)}</div>
   </article>
-  <div class="sponsor" id="sponsor"><p>Proudly supported by</p><img alt=""><p><span></span></p></div>
+  <div class="sponsor" id="sponsor"><p>Proudly supported by</p><div class="sponsor-body"></div></div>
   <div class="footer"><span>From PlayCricket · checked <span id="checked">&hellip;</span></span>
   <span class="dots" id="dots"></span></div>
 </div>

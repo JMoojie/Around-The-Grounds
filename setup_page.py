@@ -3,6 +3,7 @@
 from html import escape
 
 import config
+import sponsor_cards
 import system
 
 PRESETS = {
@@ -43,6 +44,12 @@ button.danger { background: #c92a2a; }
 .sponsor { border: 1px solid #e1e4ea; border-radius: 8px; padding: 8px; text-align: center; }
 .sponsor img { max-width: 100%; max-height: 90px; object-fit: contain; }
 .inline-form { display: inline; }
+.sc-mini { height: 90px; display: flex; align-items: center; justify-content: center; border-radius: 6px;
+           font-weight: 700; border: 1px solid #e1e4ea; color: #111; }
+.logo-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.logo-option { display: flex; align-items: center; gap: 6px; border: 1px solid #e1e4ea; border-radius: 8px;
+               padding: 6px 10px; font-weight: 400; margin: 0; background: #f8f9fb; }
+.logo-option img { max-height: 60px; max-width: 160px; object-fit: contain; }
 dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 dt { color: #5b6477; }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -93,7 +100,7 @@ def login_page(settings, first_time, flash=None):
     return _shell(body, settings, flash)
 
 
-def setup_page(settings, token, found=None, flash=None):
+def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
     parts = []
 
     # ---- Wi-Fi (on the Pi only)
@@ -177,18 +184,42 @@ def setup_page(settings, token, found=None, flash=None):
     <button type="submit">Save pages</button>''', token)}</section>""")
 
     # ---- Sponsors
-    tiles = "".join(
-        f'<div class="sponsor"><img src="/media/sponsors/{_e(s["file"])}" alt=""><div>{_e(s.get("name", ""))}</div>'
-        + _form("/setup/sponsors/remove", f'<input type="hidden" name="file" value="{_e(s["file"])}">'
-                '<button type="submit" class="secondary">Remove</button>', token, ' class="inline-form"')
-        + "</div>"
-        for s in settings["sponsors"]
-    ) or '<p class="note">No sponsors yet.</p>'
-    parts.append(f"""<section><h2>Sponsors</h2>
-    <p class="note">A sponsor's slide comes up between pages. Use a wide image (landscape) for the best look.</p>
+    def tile(s):
+        picture = (f'<img src="/media/sponsors/{_e(s["file"])}" alt="">' if s.get("file")
+                   else f'<div class="sc-mini" style="background:{_e(s.get("colour", "#fff"))}">{_e(s.get("name", ""))}</div>')
+        kind = "Website slide" if s.get("kind") == "card" else "Image"
+        return (f'<div class="sponsor">{picture}<div>{_e(s.get("name", ""))}</div><div class="note">{kind}</div>'
+                + _form("/setup/sponsors/remove", f'<input type="hidden" name="id" value="{_e(s.get("id") or s["file"])}">'
+                        '<button type="submit" class="secondary">Remove</button>', token, ' class="inline-form"')
+                + "</div>")
+
+    tiles = "".join(tile(s) for s in settings["sponsors"]) or '<p class="note">No sponsors yet.</p>'
+    confirm = ""
+    if sponsor_found:
+        options = "".join(
+            f'<label class="logo-option"><input type="radio" name="logo" value="{_e(url)}"{" checked" if n == 0 else ""}>'
+            f'<img src="{_e(url)}" alt="" referrerpolicy="no-referrer"></label>'
+            for n, url in enumerate(sponsor_found["logo_options"]))
+        options += '<label class="logo-option"><input type="radio" name="logo" value=""' + (
+            "" if sponsor_found["logo_options"] else " checked") + '> No logo (show the name)</label>'
+        confirm = _form("/setup/sponsors/save-card", f"""<h2 style="margin-top:16px">Check the slide</h2>
+        <p class="note">From {_e(sponsor_found['web'])}. Change anything that isn't right.</p>
+        <label for="sc-name">Name</label><input id="sc-name" name="name" type="text" maxlength="60" value="{_e(sponsor_found['name'])}">
+        <label for="sc-tag">Line underneath</label><input id="sc-tag" name="tagline" type="text" maxlength="140" value="{_e(sponsor_found['tagline'])}">
+        <label>Background colour</label><input name="colour" type="color" value="{_e(sponsor_found['colour'])}">
+        <label>Logo</label><div class="logo-options">{options}</div>
+        <label class="inline"><input type="checkbox" name="show_name" value="1"> Show the name under the logo too
+        (leave this off if the logo already says it)</label>
+        <button type="submit">Add this sponsor</button>""", token) + _form(
+            "/setup/sponsors/cancel", '<button type="submit" class="secondary">Cancel</button>', token)
+    parts.append(f"""<section id="sponsors"><h2>Sponsors</h2>
+    <p class="note">A sponsor's slide comes up between pages.</p>
     <div class="sponsors">{tiles}</div>
-    {_form("/setup/sponsors/add", '''<label for="sponsor-file">Add a sponsor</label>
-    <input id="sponsor-file" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+    {_form("/setup/sponsors/find", '''<label for="sponsor-site">Make a slide from the sponsor's website</label>
+    <input id="sponsor-site" name="website" type="text" inputmode="url" placeholder="e.g. westsidebakery.com.au" required>
+    <button type="submit">Make slide</button>''', token)}{confirm}
+    {_form("/setup/sponsors/add", '''<label for="sponsor-file">Or upload their logo or advert (a wide, landscape image looks best)</label>
+    <input id="sponsor-file" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" required>
     <label for="sponsor-name">Sponsor's name (optional)</label><input id="sponsor-name" name="name" type="text" maxlength="60">
     <button type="submit">Add sponsor</button>''', token, ' enctype="multipart/form-data"')}
     {_form("/setup/sponsors/timing", f'''<label for="every">Show a sponsor after every … pages (0 = never)</label>

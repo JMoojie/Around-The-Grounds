@@ -22,14 +22,15 @@ import playcricket as pc
 import scores
 import screen
 import setup_page
+import sponsor_cards
 import system
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024  # uploads: 6 MB is plenty for a logo or sponsor slide
 MAX_SPONSORS = 20
-IMAGE_TYPES = {b"\x89PNG": "png", b"\xff\xd8\xff": "jpg", b"GIF8": "gif"}
 COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")
-SPONSOR_FILE = re.compile(r"^[0-9a-f]{32}\.(png|jpg|gif|webp)$")
+SPONSOR_FILE = re.compile(r"^[0-9a-f]{32}\.(png|jpg|gif|webp|svg)$")
+SPONSOR_ID = re.compile(r"^[0-9a-f]{32}")
 
 
 def _secret_key():
@@ -75,7 +76,7 @@ def board():
         "error": result.get("error"),
         "playing": playing,
         "version": config.version(),
-        "sponsors": [{"url": f"/media/sponsors/{s['file']}", "name": s.get("name", "")}
+        "sponsors": [{"html": sponsor_cards.card_html(s, f"/media/sponsors/{s['file']}" if s.get("file") else "")}
                      for s in settings["sponsors"]],
         "sponsor_every": settings["sponsor_every"],
         "sponsor_seconds": settings["sponsor_seconds"],
@@ -92,25 +93,27 @@ def logo():
     name = config.get("logo")
     if not name:
         abort(404)
-    return send_from_directory(config.DATA_DIR, name, max_age=60)
+    return _image_response(send_from_directory(config.DATA_DIR, name, max_age=60))
 
 
 @app.get("/media/sponsors/<name>")
 def sponsor_image(name):
     if not SPONSOR_FILE.match(name):
         abort(404)
-    return send_from_directory(config.SPONSOR_DIR, name, max_age=3600)
+    return _image_response(send_from_directory(config.SPONSOR_DIR, name, max_age=3600))
+
+
+def _image_response(response):
+    # Logos can be SVG files from a sponsor's website: never let one run scripts.
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 # ---------------------------------------------------------------- the setup page
 
 def _image_type(data):
-    for magic, kind in IMAGE_TYPES.items():
-        if data.startswith(magic):
-            return kind
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "webp"
-    return None
+    return sponsor_cards.image_type(data)
 
 
 def _logged_in():
@@ -147,7 +150,7 @@ def setup():
     if not settings["pin_hash"] or not _logged_in():
         page = setup_page.login_page(settings, first_time=not settings["pin_hash"], flash=flash)
     else:
-        page = setup_page.setup_page(settings, _token(), session.get("found"), flash)
+        page = setup_page.setup_page(settings, _token(), session.get("found"), flash, session.get("sponsor_found"))
     return _no_store(make_response(page))
 
 
@@ -205,7 +208,7 @@ def setup_club_find():
 def _save_logo(data):
     kind = _image_type(data)
     if not kind:
-        raise ValueError("That isn't a PNG, JPEG, GIF or WebP image.")
+        raise ValueError("That isn't a PNG, JPEG, GIF, WebP or SVG image.")
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     old = config.get("logo")
     name = f"logo-{uuid.uuid4().hex[:8]}.{kind}"
@@ -303,23 +306,80 @@ def setup_sponsor_add():
     data = upload.read() if upload else b""
     kind = _image_type(data)
     if not kind:
-        return _done("That isn't a PNG, JPEG, GIF or WebP image.", "err")
+        return _done("That isn't a PNG, JPEG, GIF, WebP or SVG image.", "err")
     config.SPONSOR_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.{kind}"
+    sponsor_id = uuid.uuid4().hex
+    name = f"{sponsor_id}.{kind}"
     (config.SPONSOR_DIR / name).write_bytes(data)
-    config.save(sponsors=sponsors + [{"file": name, "name": request.form.get("name", "").strip()[:60]}])
+    config.save(sponsors=sponsors + [{"id": sponsor_id, "kind": "image", "file": name,
+                                      "name": request.form.get("name", "").strip()[:60]}])
     return _done("Sponsor added.")
+
+
+@app.post("/setup/sponsors/find")
+@_guarded
+def setup_sponsor_find():
+    try:
+        session["sponsor_found"] = sponsor_cards.from_website(request.form.get("website"))
+    except ValueError as error:
+        session.pop("sponsor_found", None)
+        return _done(str(error), "err")
+    return redirect("/setup#sponsors")
+
+
+@app.post("/setup/sponsors/cancel")
+@_guarded
+def setup_sponsor_cancel():
+    session.pop("sponsor_found", None)
+    return redirect("/setup#sponsors")
+
+
+@app.post("/setup/sponsors/save-card")
+@_guarded
+def setup_sponsor_save_card():
+    found = session.get("sponsor_found")
+    sponsors = config.get("sponsors")
+    if not found:
+        return _done("Please look up the website again.", "err")
+    if len(sponsors) >= MAX_SPONSORS:
+        return _done(f"There's room for {MAX_SPONSORS} sponsors; remove one first.", "err")
+    form = request.form
+    sponsor_id = uuid.uuid4().hex
+    colour = form.get("colour", "")
+    sponsor = {"id": sponsor_id, "kind": "card", "file": "", "web": found["web"],
+               "name": form.get("name", "").strip()[:60] or found["name"],
+               "tagline": form.get("tagline", "").strip()[:140],
+               "colour": colour.lower() if COLOUR.match(colour) else "#ffffff",
+               "show_name": form.get("show_name") == "1"}
+    message = "Sponsor slide added."
+    logo_url = form.get("logo", "")
+    if logo_url and logo_url in found.get("logo_options", []):
+        try:
+            data, kind = sponsor_cards.download_logo(logo_url)
+            config.SPONSOR_DIR.mkdir(parents=True, exist_ok=True)
+            sponsor["file"] = f"{sponsor_id}.{kind}"
+            (config.SPONSOR_DIR / sponsor["file"]).write_bytes(data)
+        except ValueError as error:
+            message += f" ({error} The slide shows the name instead.)"
+    config.save(sponsors=sponsors + [sponsor])
+    session.pop("sponsor_found", None)
+    return _done(message)
 
 
 @app.post("/setup/sponsors/remove")
 @_guarded
 def setup_sponsor_remove():
-    name = request.form.get("file", "")
+    wanted = request.form.get("id", "")
     sponsors = config.get("sponsors")
-    if SPONSOR_FILE.match(name):
-        config.save(sponsors=[s for s in sponsors if s["file"] != name])
-        (config.SPONSOR_DIR / name).unlink(missing_ok=True)
-    return _done("Sponsor removed.")
+    if not SPONSOR_ID.match(wanted):
+        return _done("Sponsor not found.", "err")
+    for sponsor in sponsors:
+        if (sponsor.get("id") or sponsor.get("file", "")).startswith(wanted):
+            config.save(sponsors=[s for s in sponsors if s is not sponsor])
+            if SPONSOR_FILE.match(sponsor.get("file", "")):
+                (config.SPONSOR_DIR / sponsor["file"]).unlink(missing_ok=True)
+            return _done("Sponsor removed.")
+    return _done("Sponsor not found.", "err")
 
 
 @app.post("/setup/sponsors/timing")

@@ -22,6 +22,7 @@ import playcricket as pc  # noqa: E402
 import scores  # noqa: E402
 import screen  # noqa: E402
 import server  # noqa: E402
+import sponsor_cards  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -289,9 +290,32 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/media/sponsors/{sponsors[0]['file']}").data, PNG)
         with mock.patch.object(scores, "live_board", return_value={"error": "x", "checked": "1:00 pm"}):
             data = self.client.get("/board").get_json()
-        self.assertEqual(data["sponsors"][0]["name"], "Local Bakery")
+        self.assertIn("Local Bakery", data["sponsors"][0]["html"])
+        self.assertIn(f"/media/sponsors/{sponsors[0]['file']}", data["sponsors"][0]["html"])
         self.assertEqual(data["version"], config.version())
-        self.client.post("/setup/sponsors/remove", data={"csrf": self.token(), "file": sponsors[0]["file"]})
+
+        # A slide made from a sponsor's website: checked and edited before it's added.
+        found = {"name": "Westside Bakery", "tagline": "Fresh bread daily", "colour": "#c92a2a",
+                 "web": "westsidebakery.example", "logo_url": "https://westsidebakery.example/logo.png",
+                 "logo_options": ["https://westsidebakery.example/logo.png"]}
+        with mock.patch.object(sponsor_cards, "from_website", return_value=found):
+            self.client.post("/setup/sponsors/find", data={"csrf": self.token(), "website": "westsidebakery.example"})
+        self.assertIn("Check the slide", self.client.get("/setup").get_data(as_text=True))
+        with mock.patch.object(sponsor_cards, "download_logo", return_value=(PNG, "png")):
+            self.client.post("/setup/sponsors/save-card", data={
+                "csrf": self.token(), "name": "Westside Bakery", "tagline": "Hot pies on game day",
+                "colour": "#c92a2a", "logo": "https://westsidebakery.example/logo.png"})
+        card = config.get("sponsors")[1]
+        self.assertEqual((card["kind"], card["tagline"], card["web"]), ("card", "Hot pies on game day", "westsidebakery.example"))
+        self.assertEqual(self.client.get(f"/media/sponsors/{card['file']}").data, PNG)
+        with mock.patch.object(scores, "live_board", return_value={"error": "x", "checked": "1:00 pm"}):
+            html = self.client.get("/board").get_json()["sponsors"][1]["html"]
+        self.assertIn('class="sponsor-card" style="background:#c92a2a;color:#ffffff"', html)
+        self.assertIn("Hot pies on game day", html)
+        self.assertIn("westsidebakery.example", html)
+
+        for sponsor in config.get("sponsors"):
+            self.client.post("/setup/sponsors/remove", data={"csrf": self.token(), "id": sponsor["id"]})
         self.assertEqual(config.get("sponsors"), [])
 
     def test_new_box_asks_to_be_set_up(self):
@@ -304,6 +328,45 @@ class SetupTests(unittest.TestCase):
             data = self.client.get("/board").get_json()
         self.assertIn("Connect me to Wi-Fi", data["html"])
         self.assertIn("http://10.42.0.1:8080/setup", data["html"])
+
+
+HOME_PAGE = b"""<html><head><title>Home | Westside Bakery</title>
+<meta name="description" content="Fresh bread, pies and cakes baked every morning in Westside.">
+<meta name="theme-color" content="#fc0">
+<link rel="icon" sizes="16x16" href="/tiny.ico"><link rel="apple-touch-icon" href="/touch.png">
+<meta property="og:image" content="https://cdn.example/banner.jpg?width=1200"></head>
+<body><a class="site-logo" href="/"><img src="/img/brand.png?width=80"></a></body></html>"""
+
+
+class SponsorCardTests(unittest.TestCase):
+    def test_reading_a_sponsors_home_page(self):
+        with mock.patch.object(sponsor_cards, "_get", return_value=("https://westside.example/", HOME_PAGE, "text/html")):
+            found = sponsor_cards.from_website("westside.example")
+        self.assertEqual(found["name"], "Westside Bakery")
+        self.assertEqual(found["tagline"], "Fresh bread, pies and cakes baked every morning in Westside.")
+        self.assertEqual(found["colour"], "#ffcc00")
+        self.assertEqual(found["web"], "westside.example")
+        # The image inside the "logo" link first; big icons only (no 16px favicon).
+        self.assertEqual(found["logo_options"], ["https://westside.example/img/brand.png?width=80",
+                                                 "https://cdn.example/banner.jpg?width=1200",
+                                                 "https://westside.example/touch.png"])
+
+    def test_bot_check_pages_and_private_addresses(self):
+        page = b"<html><head><title>Just a moment...</title></head></html>"
+        with mock.patch.object(sponsor_cards, "_get", return_value=("https://shy.example/", page, "text/html")):
+            with self.assertRaises(ValueError):
+                sponsor_cards.from_website("shy.example")
+        for address in ("http://127.0.0.1/", "http://192.168.1.1/", "ftp://example.org/"):
+            with self.assertRaises(ValueError):
+                sponsor_cards._check_public(address)
+
+    def test_text_colour_suits_the_background(self):
+        self.assertIn("color:#111111", sponsor_cards.card_html({"kind": "card", "name": "A", "colour": "#ffec0f"}, ""))
+        self.assertIn("color:#ffffff", sponsor_cards.card_html({"kind": "card", "name": "A", "colour": "#0b1424"}, ""))
+        with_logo = {"kind": "card", "name": "Westside", "colour": "#ffffff", "file": "x.png"}
+        self.assertNotIn("sc-name", sponsor_cards.card_html(dict(with_logo, show_name=False), "/x.png"))
+        self.assertIn("sc-name", sponsor_cards.card_html(dict(with_logo, show_name=True), "/x.png"))
+        self.assertEqual(sponsor_cards.image_type(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"), "svg")
 
 
 class DiscoverTests(unittest.TestCase):
