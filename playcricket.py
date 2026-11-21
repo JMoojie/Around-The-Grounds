@@ -56,3 +56,10 @@ def fetch_match_scorecard(match_id, *, max_age=None):
     return _get_json(f"scores/matches/{match_id}",
                      params={"responseModifier": "includeScorecard", "jsconfig": "eccn:true"},
                      max_age=max_age)
+
+
+def fetch_participant_statistics(club_id, kind, *, season_id, offset=1, limit=100, max_age=None):
+    """One page of a club's batting, bowling or fielding statistics for a season."""
+    return _get_json(f"participants/organisations/{club_id}/{kind}-statistics",
+                     params={"seasonId": season_id, "offset": offset, "limit": limit, "jsconfig": "eccn:true"},
+                     max_age=max_age)

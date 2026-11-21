@@ -154,6 +154,33 @@ class ScreenTests(unittest.TestCase):
         self.assertIn("Trying again", screen.render_board({"error": "Couldn't reach PlayCricket"}))
 
 
+STATS = {
+    "batting": [{"name": "Hitter, Dana", "statistics": {"battingAggregate": 160, "battingInnings": 5,
+                                                        "battingHighScore": 66, "isBattingHSNotOut": True}},
+                {"name": "Nought, Ned", "statistics": {"battingAggregate": 0, "battingInnings": 2}}],
+    "bowling": [{"name": "Thrower, Eli", "statistics": {"bowlingWickets": 12, "bowlingRuns": 103,
+                                                        "bowlingBestInnings": "4-14"}}],
+    "fielding": [{"name": "Hands, Safe", "statistics": {"fieldingTotalCatches": 8, "matches": 6}}],
+}
+
+
+class LeadersTests(unittest.TestCase):
+    def test_season_leaders_page(self):
+        def stats(club_id, kind, season_id, offset=1, max_age=None):
+            return {"totalRecords": len(STATS[kind]), "participants": STATS[kind]}
+
+        with mock.patch.object(pc, "fetch_organisation_seasons",
+                               return_value={"seasons": [{"id": "s", "name": "Summer 2026/27"}]}),              mock.patch.object(pc, "fetch_participant_statistics", side_effect=stats):
+            leaders = scores.season_leaders()
+        self.assertEqual(leaders["runs"], [("Dana Hitter", 160, "66*")])  # nobody on 0 runs
+        self.assertEqual(leaders["wickets"], [("Eli Thrower", 12, "4/14")])
+        self.assertEqual(leaders["catches"], [("Safe Hands", 8, 6)])
+        html = screen.render_board({"mode": "between", "results": [], "coming": [], "results_day": None,
+                                    "coming_day": None, "leaders": leaders})
+        self.assertIn('data-title="Season leaders · Summer 2026/27"', html)
+        self.assertIn("<td>Dana Hitter</td><td class=\"num\">160</td>", html)
+
+
 class ServerTests(unittest.TestCase):
     def test_routes(self):
         client = server.app.test_client()

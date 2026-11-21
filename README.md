@@ -10,7 +10,9 @@ scores straight from PlayCricket. It stores nothing and needs only Wi-Fi.
   gets its own page in turn. Every other game is a small score along the bottom.
 - **Match day, nothing live:** today's games as cards (start times, results, and
   "No live score" for games nobody is scoring on PlayCricket).
-- **Other days:** the latest results, then the next match day's fixtures.
+- **Other days:** the latest results, the season leaders (top 10 run scorers,
+  wicket takers and catchers across all the club's grades, from PlayCricket's
+  season statistics), then the next match day's fixtures.
 
 Scores are checked every minute (PlayCricket's live scores themselves update
 as the scorer's app sends them). It began as the Live scores screen of the

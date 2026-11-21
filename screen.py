@@ -189,6 +189,26 @@ def _grid_pages(title, games):
     return pages
 
 
+def _leaders_page(leaders):
+    def table(headers, rows):
+        head = '<th class="rank">#</th>' + "".join(
+            f'<th class="{"num" if i else ""}">{_e(h)}</th>' for i, h in enumerate(headers))
+        body = "".join(
+            f'<tr><td class="rank">{n}</td><td>{_e(name)}</td><td class="num">{_e(main)}</td>'
+            f'<td class="num">{_e(extra)}</td></tr>'
+            for n, (name, main, extra) in enumerate(rows, start=1)
+        ) or '<tr><td colspan="4" class="empty">None yet</td></tr>'
+        return f'<table class="ranked"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+    panels = (
+        ("Most runs", table(("Player", "Runs", "HS"), leaders["runs"])),
+        ("Most wickets", table(("Player", "Wkts", "Best"), leaders["wickets"])),
+        ("Most catches", table(("Player", "Ct", "Games"), leaders["catches"])),
+    )
+    return '<div class="leaders">' + "".join(
+        f'<section class="panel"><h2>{title}</h2>{inner}</section>' for title, inner in panels) + "</div>"
+
+
 def _message(text):
     return f'<p class="live-empty">{text}</p>'
 
@@ -217,6 +237,9 @@ def render_board(board):
     else:
         if board.get("results"):
             pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
+        leaders = board.get("leaders")
+        if leaders and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
+            pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
         if board.get("coming"):
             pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
         if not pages:
@@ -380,6 +403,9 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .live-page.on { display: flex; }
 .live-page > .live-grid { height: 770px; }
 .topbar .club small { letter-spacing: 4px; }
+.leaders { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 36px; height: 770px; }
+.leaders table { font-size: 30px; }
+.leaders th.num { width: 100px; }
 /* Noto Sans is installed on the Pi; Segoe UI is the Windows look. */
 body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; }
 """

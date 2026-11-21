@@ -23,6 +23,8 @@ TEAMS_MAX_AGE = 6 * 60 * 60      # the club's teams and grades for the season
 FIXTURES_MAX_AGE = 15 * 60       # each grade's fixture list (finds today's games)
 SCORES_MAX_AGE = 90              # a game being played today
 RESULT_MAX_AGE = 60 * 60         # a game already finished
+LEADERS_MAX_AGE = 60 * 60        # season statistics (they change after games are finalised)
+LEADERS_ROWS = 10
 
 CLUB_PREFIXES = (config.CLUB_NAME + " ", config.CLUB_NAME)
 STATE_ORDER = {"live": 0, "upcoming": 1, "done": 2, "unscored": 3, "off": 4}
@@ -319,11 +321,62 @@ def board(today=None):
             "coming": _ordered(coming), "coming_day": coming_day}
 
 
+def _player_name(participant):
+    """PlayCricket's 'Venn, Heath' -> 'Heath Venn'."""
+    name = str(participant.get("name") or participant.get("shortName") or "").strip()
+    last, comma, first = name.partition(",")
+    return f"{first.strip()} {last.strip()}".strip() if comma else name
+
+
+def _all_statistics(kind, season_id):
+    players, offset = [], 1
+    while True:
+        data = pc.fetch_participant_statistics(config.CLUB_ID, kind, season_id=season_id, offset=offset,
+                                               max_age=LEADERS_MAX_AGE)
+        page = data.get("participants") or []
+        players += page
+        offset += 100
+        if not page or offset > (data.get("totalRecords") or 0):
+            return players
+
+
+def season_leaders():
+    """The season's top run scorers, wicket takers and catchers (all the club's grades together)."""
+    seasons = pc.fetch_organisation_seasons(config.CLUB_ID, max_age=TEAMS_MAX_AGE).get("seasons") or []
+    if not seasons:
+        return None
+    season = seasons[0]
+    stat = lambda p, key: (p.get("statistics") or {}).get(key) or 0  # noqa: E731
+
+    batting = [p for p in _all_statistics("batting", season["id"]) if stat(p, "battingAggregate") > 0]
+    batting.sort(key=lambda p: (-stat(p, "battingAggregate"), stat(p, "battingInnings"), _player_name(p)))
+    bowling = [p for p in _all_statistics("bowling", season["id"]) if stat(p, "bowlingWickets") > 0]
+    bowling.sort(key=lambda p: (-stat(p, "bowlingWickets"), stat(p, "bowlingRuns"), _player_name(p)))
+    fielding = [p for p in _all_statistics("fielding", season["id"]) if stat(p, "fieldingTotalCatches") > 0]
+    fielding.sort(key=lambda p: (-stat(p, "fieldingTotalCatches"), -stat(p, "fieldingStumpings"), _player_name(p)))
+    return {
+        "season": season.get("name") or "",
+        "runs": [(_player_name(p), stat(p, "battingAggregate"),
+                  f"{stat(p, 'battingHighScore')}{'*' if (p.get('statistics') or {}).get('isBattingHSNotOut') else ''}")
+                 for p in batting[:LEADERS_ROWS]],
+        "wickets": [(_player_name(p), stat(p, "bowlingWickets"),
+                     str((p.get("statistics") or {}).get("bowlingBestInnings") or "").replace("-", "/"))
+                    for p in bowling[:LEADERS_ROWS]],
+        "catches": [(_player_name(p), stat(p, "fieldingTotalCatches"), stat(p, "matches"))
+                    for p in fielding[:LEADERS_ROWS]],
+    }
+
+
 def live_board():
     """``board()`` plus when it was checked, or {"error": ...} when PlayCricket can't be reached."""
     try:
         result = board()
     except Exception as error:  # offline, PlayCricket down, unexpected reply
         return {"error": f"Couldn't reach PlayCricket ({type(error).__name__})", "checked": _clock(_now())}
+    if result["mode"] == "between":
+        try:
+            result["leaders"] = season_leaders()
+        except Exception:
+            result["leaders"] = None  # results and fixtures still show
     result["checked"] = _clock(_now())
     return result
