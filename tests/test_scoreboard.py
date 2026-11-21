@@ -240,6 +240,14 @@ class SetupTests(unittest.TestCase):
             self.client.post("/setup/club/find", data={
                 "csrf": self.token(), "link": "https://play.cricket.com.au/club/riverside/" + found["club_id"]})
         discover.assert_called_once_with(found["club_id"])
+        # A link without the club's ID explains what's missing.
+        with mock.patch.object(scores, "discover_club") as never:
+            self.client.post("/setup/club/find", data={
+                "csrf": self.token(), "link": "https://play.cricket.com.au/club/riverside-cricket-club"})
+        never.assert_not_called()
+        self.assertIn("doesn&#x27;t include the club&#x27;s ID", self.client.get("/setup").get_data(as_text=True))
+        with mock.patch.object(scores, "discover_club", return_value=found):
+            self.client.post("/setup/club/find", data={"csrf": self.token(), "link": found["club_id"]})
         self.assertIn("Is this your club?", self.client.get("/setup").get_data(as_text=True))
         self.client.post("/setup/club/save", data={"csrf": self.token(), "club_id": found["club_id"],
                                                    "club_name": "Riverside Cricket Club", "short_name": "Rivers",

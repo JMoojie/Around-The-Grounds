@@ -188,7 +188,12 @@ def setup_pin():
 @app.post("/setup/club/find")
 @_guarded
 def setup_club_find():
-    club_id = scores.club_id_from(request.form.get("link"))
+    link = request.form.get("link", "")
+    club_id = scores.club_id_from(link)
+    if not club_id:
+        return _done("That link doesn't include the club's ID. On play.cricket.com.au, open your club's page "
+                     "and copy the whole address from the browser: it ends with a long code like "
+                     "c88df151-87d8-eb11-a7ad-2818780da0cc (after the club's name).", "err")
     try:
         session["found"] = scores.discover_club(club_id)
     except ValueError as error:

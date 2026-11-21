@@ -133,7 +133,9 @@ def setup_page(settings, token, found=None, flash=None):
     parts.append(f"""<section><h2>Club</h2>{current}
     {_form("/setup/club/find", '''<label for="link">Link to your club's PlayCricket page</label>
     <input id="link" name="link" type="url" placeholder="https://play.cricket.com.au/club/..." required>
-    <p class="note">Find your club on play.cricket.com.au, open its page, and copy the address from the browser.</p>
+    <p class="note">Find your club on play.cricket.com.au, open its page, and copy the whole address from the
+    browser. It ends with a long code after the club's name, e.g.
+    play.cricket.com.au/club/your-club-name/<strong>c88df151-87d8-eb11-a7ad-2818780da0cc</strong></p>
     <button type="submit">Find club</button>''', token)}{confirm}</section>""")
 
     # ---- Look
