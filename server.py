@@ -18,6 +18,7 @@ from flask import Flask, abort, jsonify, make_response, redirect, request, send_
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
+import extra_pages
 import playcricket as pc
 import scores
 import screen
@@ -86,6 +87,34 @@ def board():
 @app.get("/health")
 def health():
     return "ok"
+
+
+def _extra_key_ok():
+    key = config.get("extra_key")
+    supplied = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    return bool(key) and secrets.compare_digest(supplied.encode(), key.encode())
+
+
+@app.post("/api/pages")
+def api_pages():
+    """Extra pages from another program (needs the box's extra pages key)."""
+    if not _extra_key_ok():
+        time.sleep(1)
+        return jsonify({"error": "Wrong or missing key."}), 401
+    try:
+        pack = extra_pages.save(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify({"ok": True, "pages": len(pack["pages"])})
+
+
+@app.delete("/api/pages")
+def api_pages_remove():
+    if not _extra_key_ok():
+        time.sleep(1)
+        return jsonify({"error": "Wrong or missing key."}), 401
+    extra_pages.clear()
+    return jsonify({"ok": True})
 
 
 @app.get("/media/logo")
@@ -387,6 +416,20 @@ def setup_sponsor_remove():
 def setup_sponsor_timing():
     config.save(sponsor_every=_whole("sponsor_every", 0, 20, 3), sponsor_seconds=_whole("sponsor_seconds", 3, 60, 10))
     return _done("Sponsor timing saved.")
+
+
+@app.post("/setup/extra")
+@_guarded
+def setup_extra():
+    action = request.form.get("action", "")
+    if action == "new-key":
+        config.save(extra_key=secrets.token_urlsafe(24))
+        return _done("New extra pages key made. Give it to the program that sends the pages.")
+    if action == "remove":
+        extra_pages.clear()
+        return _done("Extra pages removed.")
+    config.save(show_extra=request.form.get("show_extra") == "1")
+    return _done("Extra pages setting saved.")
 
 
 @app.post("/setup/wifi")

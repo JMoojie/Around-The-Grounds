@@ -3,6 +3,7 @@
 from html import escape
 
 import config
+import extra_pages
 import sponsor_cards
 import system
 
@@ -227,6 +228,29 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
     <label for="sponsor-seconds">Seconds on each sponsor</label>
     <input id="sponsor-seconds" name="sponsor_seconds" type="number" min="3" max="60" value="{settings['sponsor_seconds']}">
     <button type="submit" class="secondary">Save sponsor timing</button>''', token)}</section>""")
+
+    # ---- Extra pages (sent by another program, e.g. a club's own stats archive)
+    pack = extra_pages.load()
+    if pack and pack["pages"]:
+        titles = "".join(f"<li>{_e(p['title'])}</li>" for p in pack["pages"])
+        status = (f"<p>{len(pack['pages'])} page{'s' if len(pack['pages']) != 1 else ''} from "
+                  f"<strong>{_e(pack['source'] or 'another program')}</strong>"
+                  f"{', sent ' + _e(pack['published'].replace('T', ' at ')) if pack['published'] else ''}:</p><ul>{titles}</ul>")
+    else:
+        status = '<p class="note">No extra pages yet.</p>'
+    key = settings.get("extra_key")
+    key_text = (f'<p>Key: <code style="word-break:break-all">{_e(key)}</code></p>' if key
+                else '<p class="note">No key yet: make one to let another program send pages.</p>')
+    parts.append(f"""<section id="extra"><h2>Extra pages</h2>
+    <p class="note">Pages your club's own systems send to the scoreboard (for example career stats from a club
+    archive). They show after the season leaders. The sending program needs this box's address and key.</p>
+    {status}
+    {_form("/setup/extra", f'''<label class="inline"><input type="checkbox" name="show_extra" value="1"{" checked" if settings["show_extra"] else ""}> Show extra pages</label>
+    <button type="submit" class="secondary">Save</button>''', token)}
+    {key_text}
+    {_form("/setup/extra", '<input type="hidden" name="action" value="new-key"><button type="submit" class="secondary">Make a new key</button>', token, ' class="inline-form"')}
+    {_form("/setup/extra", '<input type="hidden" name="action" value="remove"><button type="submit" class="secondary">Remove extra pages</button>', token, ' class="inline-form"') if pack else ""}
+    </section>""")
 
     # ---- PIN and system
     system_buttons = ""

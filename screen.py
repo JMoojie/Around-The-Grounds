@@ -8,6 +8,7 @@ Card layouts come from the club archive's TV display.
 from html import escape
 
 import config
+import extra_pages
 
 
 
@@ -237,12 +238,26 @@ def _setup_message(board):
     return f'<div class="setup-screen"><h2>{heading}</h2><ol>{items}</ol></div>'
 
 
+def _sent_pages():
+    """Pages another program sent (extra_pages.py), with their own extra styles."""
+    pack = extra_pages.load() if config.get("show_extra") else None
+    if not pack or not pack["pages"]:
+        return []
+    pages = []
+    for n, page in enumerate(pack["pages"]):
+        style = f"<style>{pack['css']}</style>" if n == 0 and pack.get("css") else ""
+        screen = f' data-screen="{page["screen"]}"' if page.get("screen") else ""
+        pages.append((page["title"], f'{style}<div class="extra-grid cols-{page["columns"]}"{screen}>{page["html"]}</div>'))
+    return pages
+
+
 def _extra_pages(board):
     """Season leaders and the next match day, after the day's own pages."""
     pages = []
     leaders = board.get("leaders")
     if leaders and config.get("show_leaders") and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
         pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
+    pages += _sent_pages()
     if board.get("coming") and config.get("show_coming"):
         pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
     return pages
@@ -438,6 +453,10 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .live-page.on { display: flex; }
 .live-page > .live-grid { height: 770px; }
 .topbar .club small { letter-spacing: 4px; }
+.extra-grid { display: grid; gap: 36px; height: 770px; }
+.extra-grid.cols-1 { grid-template-columns: 1fr; }
+.extra-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.extra-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 .leaders { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 36px; height: 770px; }
 .leaders table { font-size: 30px; }
 .leaders th.num { width: 100px; }

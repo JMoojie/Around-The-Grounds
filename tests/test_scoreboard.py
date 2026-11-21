@@ -23,6 +23,7 @@ import scores  # noqa: E402
 import screen  # noqa: E402
 import server  # noqa: E402
 import sponsor_cards  # noqa: E402
+import extra_pages  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -336,6 +337,59 @@ HOME_PAGE = b"""<html><head><title>Home | Westside Bakery</title>
 <link rel="icon" sizes="16x16" href="/tiny.ico"><link rel="apple-touch-icon" href="/touch.png">
 <meta property="og:image" content="https://cdn.example/banner.jpg?width=1200"></head>
 <body><a class="site-logo" href="/"><img src="/img/brand.png?width=80"></a></body></html>"""
+
+
+PACK = {"source": "Club archive", "published": "2026-11-22T10:00", "css": ".extra-grid[data-screen=leaders] th.num { width: 150px; }",
+        "pages": [{"title": "Career leaders · Seniors", "html": "<section class='panel'><h2>Career runs</h2></section>",
+                   "columns": 3, "screen": "leaders"}]}
+
+
+class ExtraPagesTests(unittest.TestCase):
+    def setUp(self):
+        self.client = server.app.test_client()
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        self.addCleanup(extra_pages.clear)
+
+    def send(self, pack, key):
+        with mock.patch.object(server.time, "sleep"):
+            return self.client.post("/api/pages", json=pack, headers={"Authorization": f"Bearer {key}"})
+
+    def test_pages_from_another_program(self):
+        # No key made yet: nothing is accepted.
+        self.assertEqual(self.send(PACK, "").status_code, 401)
+        config.save(extra_key="k" * 32)
+        self.assertEqual(self.send(PACK, "wrong").status_code, 401)
+        bad = {"pages": [{"title": "x", "html": "<img src=x onerror=alert(1)>"}]}
+        self.assertEqual(self.send(bad, "k" * 32).status_code, 400)
+        self.assertEqual(self.send({"pages": [{"title": "x", "html": "<script>1</script>"}]}, "k" * 32).status_code, 400)
+        response = self.send(PACK, "k" * 32)
+        self.assertEqual(response.get_json(), {"ok": True, "pages": 1})
+
+        result = run_board([LAST_WEEK, NEXT_WEEK], today=date(2026, 11, 18))
+        result["leaders"] = {"season": "Summer", "runs": [("Dana Hitter", 160, "66")], "wickets": [], "catches": []}
+        html = screen.render_board(result)
+        self.assertEqual(re.findall(r'data-title="([^"]+)"', html),
+                         ["Latest results · Saturday 14 November", "Season leaders · Summer",
+                          "Career leaders · Seniors", "Coming up · Saturday 28 November"])
+        self.assertIn('<div class="extra-grid cols-3" data-screen="leaders"><section', html)
+        self.assertIn("<style>.extra-grid[data-screen=leaders] th.num", html)
+        # Turned off on the setup page: gone from the rotation.
+        config.save(show_extra=False)
+        self.assertNotIn("Career leaders", screen.render_board(result))
+        config.save(show_extra=True)
+        with mock.patch.object(server.time, "sleep"):
+            self.client.delete("/api/pages", headers={"Authorization": "Bearer " + "k" * 32})
+        self.assertIsNone(extra_pages.load())
+
+    def test_setup_makes_a_key(self):
+        self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+        page = self.client.get("/setup").get_data(as_text=True)
+        token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+        self.assertIn("No key yet", page)
+        self.client.post("/setup/extra", data={"csrf": token, "action": "new-key"})
+        key = config.get("extra_key")
+        self.assertGreater(len(key), 20)
+        self.assertIn(key, self.client.get("/setup").get_data(as_text=True))
 
 
 class SponsorCardTests(unittest.TestCase):

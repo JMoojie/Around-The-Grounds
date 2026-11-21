@@ -48,6 +48,8 @@ DEFAULTS = {
     "show_leaders": True,
     "show_coming": True,
     "live_only": False,               # while games are being played, show only the live scores
+    "show_extra": True,               # pages sent by another program (see extra_pages.py)
+    "extra_key": "",                  # the key that program needs (made on the setup page)
     # Sponsors: [{"file": ..., "name": ...}], one shown after every N pages.
     "sponsors": [],
     "sponsor_every": 3,
