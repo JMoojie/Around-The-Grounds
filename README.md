@@ -14,9 +14,20 @@ scores straight from PlayCricket. It stores nothing and needs only Wi-Fi.
   wicket takers and catchers across all the club's grades, from PlayCricket's
   season statistics), then the next match day's fixtures.
 
+- **Any club:** each box is set up from a phone at `/setup`: paste the link
+  to the club's PlayCricket page and it finds the club, its team names and logo.
+  Then choose colours, heading, logo, which pages to show, and **sponsor
+  slides** that come up between pages.
+- **No Wi-Fi yet?** The box opens its own setup Wi-Fi and the TV says how to
+  connect to it and choose the club's network.
+
 Scores are checked every minute (PlayCricket's live scores themselves update
 as the scorer's app sends them). It began as the Live scores screen of the
-club's Cricket Archive app.
+Altona Roosters' Cricket Archive app.
+
+Selling it to other clubs: see `docs/SELLING.md`, the ready-made SD card kit in
+`deploy/image/README.md`, and the draft request to PlayHQ in
+`docs/playhq-permission-request.md`.
 
 ## Try it on a laptop
 
@@ -25,16 +36,21 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Then open http://localhost:8080. On Windows, if that port is blocked, set
-another first, e.g. `set ATG_PORT=5055` (PowerShell: `$env:ATG_PORT="5055"`).
+Then open http://localhost:8080/setup to choose a PIN and the club, and
+http://localhost:8080 for the scoreboard. On Windows, if that port is blocked,
+set another first, e.g. `set ATG_PORT=5055` (PowerShell: `$env:ATG_PORT="5055"`).
 
 Tests: `python -m unittest discover -s tests`
 
 ## Settings
 
-`settings.example.env` lists them all: the club's PlayCricket ID and names,
-the port, and how often the screen refreshes and turns pages. On the Pi they
-live in `settings.env`.
+Almost everything is chosen on the setup page and saved in the `data` folder
+(the club, colours, logo, sponsors, timings and the setup PIN). The data folder
+is never committed. `settings.env` (copied from `settings.example.env`) only
+holds the web server's port and the setup hotspot's name and password.
+
+Forgotten the setup PIN? On the box: `python3 -c "import config; config.save(pin_hash='')"`
+in the project folder, then open `/setup` to choose a new one.
 
 ## Setting up the Raspberry Pi
 
@@ -77,8 +93,10 @@ cd around-the-grounds
 sudo ./deploy/pi/setup.sh
 ```
 
-Setup takes 10–20 minutes on a Zero. The scoreboard then appears on the TV, and
-it starts by itself every time the Pi is powered on.
+Setup takes 10–20 minutes on a Zero. The TV then shows **Let's get set up**
+with the address of the setup page: open it on a phone on the same Wi-Fi,
+choose a PIN, and paste the link to the club's PlayCricket page. The
+scoreboard starts by itself every time the Pi is powered on.
 
 (No laptop handy? Plug a USB keyboard into the Pi with a micro-USB OTG adapter,
 log in on the TV screen, and type the same commands.)
@@ -105,14 +123,21 @@ and clone with `git clone git@github.com:<your-account>/around-the-grounds.git`.
 
 | To | Run |
 |---|---|
-| Change the Wi-Fi | `sudo nmtui` |
-| Change settings | `nano settings.env`, then `sudo systemctl restart around-the-grounds around-the-grounds-kiosk` |
+| Change the Wi-Fi | the setup page, or `sudo nmtui` |
+| Change the club, look, sponsors or timings | the setup page: http://aroundthegrounds.local:8080/setup |
 | See what the scoreboard is doing | `journalctl -u around-the-grounds -n 50` |
 | See what the TV browser is doing | `journalctl -u around-the-grounds-kiosk -n 50` |
+| See what the Wi-Fi watcher is doing | `journalctl -u around-the-grounds-wifi -n 50` |
 | Restart everything | `sudo reboot` |
 
 Phones and laptops on the same Wi-Fi can open the scoreboard too:
 http://aroundthegrounds.local:8080
+
+**Wi-Fi gone?** If the box can't reach a network for about a minute and a half
+after starting, it opens a setup Wi-Fi called `AroundTheGrounds-Setup`
+(password `scoreboard`; both can be changed in `settings.env`) and the TV
+explains how to use it. While the setup Wi-Fi is on, the box tries the club's
+saved network again every 10 minutes.
 
 **If the picture is sluggish on a Zero:** run the TV output at 720p (the page
 scales to fit). Add ` video=HDMI-A-1:1280x720@60` to the end of the single line

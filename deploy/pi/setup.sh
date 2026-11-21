@@ -21,7 +21,7 @@ BROWSER_PACKAGE=chromium-browser
 apt-cache show chromium-browser >/dev/null 2>&1 || BROWSER_PACKAGE=chromium
 apt-get install -y --no-install-recommends \
     python3-flask python3-requests python3-waitress \
-    cage "$BROWSER_PACKAGE" fonts-noto-core curl git v4l-utils
+    cage "$BROWSER_PACKAGE" fonts-noto-core curl git v4l-utils iw
 
 # The browser needs access to the screen, GPU and keyboard.
 usermod -aG video,render,input "$APP_USER"
@@ -31,6 +31,17 @@ if [ -f /etc/dphys-swapfile ]; then
     sed -i 's/^#\?CONF_SWAPSIZE=.*/CONF_SWAPSIZE=512/' /etc/dphys-swapfile
     systemctl restart dphys-swapfile || true
 fi
+
+# The club's settings, logo and sponsors (made on the setup page) live here.
+mkdir -p "$APP_DIR/data"
+chown "$APP_USER": "$APP_DIR/data"
+
+# Marks this as a scoreboard box (the setup page then offers Wi-Fi and restarts),
+# and lets the scoreboard run its root helper, and nothing else, with sudo.
+echo "APP_DIR=$APP_DIR" > /etc/around-the-grounds.conf
+echo "$APP_USER ALL=(root) NOPASSWD: $APP_DIR/deploy/pi/admin.sh" > /etc/sudoers.d/around-the-grounds
+chmod 440 /etc/sudoers.d/around-the-grounds
+visudo -cf /etc/sudoers.d/around-the-grounds >/dev/null
 
 if [ ! -f "$APP_DIR/settings.env" ]; then
     cp "$APP_DIR/settings.example.env" "$APP_DIR/settings.env"
@@ -90,6 +101,23 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+echo "== Wi-Fi watcher (opens a setup hotspot when there's no Wi-Fi)"
+cat > /etc/systemd/system/around-the-grounds-wifi.service <<EOF
+[Unit]
+Description=Around the Grounds Wi-Fi watcher and setup hotspot
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+EnvironmentFile=-$APP_DIR/settings.env
+ExecStart=$APP_DIR/deploy/pi/wifi-check.sh watch
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 echo "== Automatic updates (daily at 5 am, and shortly after each start)"
 cat > /etc/systemd/system/around-the-grounds-update.service <<EOF
 [Unit]
@@ -126,13 +154,15 @@ fi
 
 systemctl daemon-reload
 systemctl disable getty@tty1.service >/dev/null 2>&1 || true
-systemctl enable around-the-grounds.service around-the-grounds-kiosk.service around-the-grounds-update.timer
+systemctl enable around-the-grounds.service around-the-grounds-kiosk.service around-the-grounds-wifi.service \
+    around-the-grounds-update.timer
 systemctl restart around-the-grounds.service
 systemctl restart around-the-grounds-kiosk.service || true
+systemctl restart around-the-grounds-wifi.service
 systemctl start around-the-grounds-update.timer
 
 echo
-echo "== Done. The scoreboard should now be on the TV."
+echo "== Done. The scoreboard should now be on the TV, asking to be set up."
 echo "   Restart the Pi any time with:  sudo reboot"
 PORT="$(sed -n 's/^ATG_PORT=//p' "$APP_DIR/settings.env")"
-echo "   From a phone or laptop on the same Wi-Fi:  http://$(hostname).local:${PORT:-8080}/"
+echo "   Set it up from a phone or laptop on the same Wi-Fi:  http://$(hostname).local:${PORT:-8080}/setup"

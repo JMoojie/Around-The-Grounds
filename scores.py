@@ -11,12 +11,12 @@ from datetime import datetime
 import config
 import playcricket as pc
 
+import re
+
 try:
     from zoneinfo import ZoneInfo
-
-    CLUB_TIMEZONE = ZoneInfo(config.TIMEZONE)
-except Exception:  # pragma: no cover - no timezone data installed
-    CLUB_TIMEZONE = None
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 # How long PlayCricket responses are reused, in seconds.
 TEAMS_MAX_AGE = 6 * 60 * 60      # the club's teams and grades for the season
@@ -26,14 +26,25 @@ RESULT_MAX_AGE = 60 * 60         # a game already finished
 LEADERS_MAX_AGE = 60 * 60        # season statistics (they change after games are finalised)
 LEADERS_ROWS = 10
 
-CLUB_PREFIXES = (config.CLUB_NAME + " ", config.CLUB_NAME)
 STATE_ORDER = {"live": 0, "upcoming": 1, "done": 2, "unscored": 3, "off": 4}
 
 _lock = threading.Lock()
+_zones = {}
+
+
+def _timezone():
+    name = config.get("timezone")
+    if name not in _zones:
+        try:
+            _zones[name] = ZoneInfo(name) if ZoneInfo else None
+        except Exception:  # unknown zone, or no timezone data installed
+            _zones[name] = None
+    return _zones[name]
 
 
 def _now():
-    return datetime.now(CLUB_TIMEZONE) if CLUB_TIMEZONE else datetime.now()
+    zone = _timezone()
+    return datetime.now(zone) if zone else datetime.now()
 
 
 def _local(start):
@@ -45,8 +56,9 @@ def _local(start):
             parsed = datetime.fromisoformat(str(start)[:19])
         except ValueError:
             return None
-    if parsed.tzinfo is not None and CLUB_TIMEZONE is not None:
-        parsed = parsed.astimezone(CLUB_TIMEZONE)
+    zone = _timezone()
+    if parsed.tzinfo is not None and zone is not None:
+        parsed = parsed.astimezone(zone)
     return parsed
 
 
@@ -70,15 +82,15 @@ def is_today(record, today):
 def team_label(name):
     """'<club name> U13 Mixed' -> 'U13 Mixed'."""
     text = str(name or "").strip()
-    for prefix in CLUB_PREFIXES:
-        if text.startswith(prefix) and text[len(prefix):].strip():
-            return text[len(prefix):].strip()
+    prefix = config.get("team_prefix").strip()
+    if prefix and text.casefold().startswith(prefix.casefold()) and text[len(prefix):].strip():
+        return text[len(prefix):].strip()
     return text
 
 
 def _is_club(team, club_team_ids):
     organisation = (team.get("owningOrganisation") or {}).get("id")
-    return organisation == config.CLUB_ID or str(team.get("id")) in club_team_ids
+    return organisation == config.get("club_id") or str(team.get("id")) in club_team_ids
 
 
 def _overs(value):
@@ -250,10 +262,10 @@ def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", 
 
 def _club_grades():
     """(grade ids, club team ids, {team id: club team name}, {grade id: name}) for the current season."""
-    seasons = pc.fetch_organisation_seasons(config.CLUB_ID, max_age=TEAMS_MAX_AGE).get("seasons") or []
+    seasons = pc.fetch_organisation_seasons(config.get("club_id"), max_age=TEAMS_MAX_AGE).get("seasons") or []
     grade_ids, team_ids, names, grade_names = [], set(), {}, {}
     for season in seasons[:1]:  # the newest season comes first
-        teams = pc.fetch_organisation_teams(config.CLUB_ID, season["id"],
+        teams = pc.fetch_organisation_teams(config.get("club_id"), season["id"],
                                             max_age=TEAMS_MAX_AGE).get("teams") or []
         for team in teams:
             team_ids.add(str(team.get("id")))
@@ -331,7 +343,7 @@ def _player_name(participant):
 def _all_statistics(kind, season_id):
     players, offset = [], 1
     while True:
-        data = pc.fetch_participant_statistics(config.CLUB_ID, kind, season_id=season_id, offset=offset,
+        data = pc.fetch_participant_statistics(config.get("club_id"), kind, season_id=season_id, offset=offset,
                                                max_age=LEADERS_MAX_AGE)
         page = data.get("participants") or []
         players += page
@@ -342,7 +354,7 @@ def _all_statistics(kind, season_id):
 
 def season_leaders():
     """The season's top run scorers, wicket takers and catchers (all the club's grades together)."""
-    seasons = pc.fetch_organisation_seasons(config.CLUB_ID, max_age=TEAMS_MAX_AGE).get("seasons") or []
+    seasons = pc.fetch_organisation_seasons(config.get("club_id"), max_age=TEAMS_MAX_AGE).get("seasons") or []
     if not seasons:
         return None
     season = seasons[0]
@@ -367,8 +379,71 @@ def season_leaders():
     }
 
 
+CLUB_LINK = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+CLUB_WORDS = re.compile(r"\s+(cricket club|cricket|club|cc)(\s+inc\.?|\s+incorporated)?$", re.I)
+
+
+def club_id_from(text):
+    """The club ID from a PlayCricket club page link (or the ID itself)."""
+    match = CLUB_LINK.search(str(text or ""))
+    return match.group(0).lower() if match else ""
+
+
+def _common_prefix(names):
+    """The words every name starts with: ['Altona Roosters 1st XI', 'Altona Roosters U13'] -> 'Altona Roosters'."""
+    split = [n.split() for n in names if n.split()]
+    if not split:
+        return ""
+    words = []
+    for column in zip(*split):
+        if all(w.casefold() == column[0].casefold() for w in column):
+            words.append(column[0])
+        else:
+            break
+    return " ".join(words)
+
+
+def discover_club(club_id):
+    """Everything setup needs about a club, from PlayCricket: its name, how its
+    teams are named, a suggested short name and its logo. Raises ValueError."""
+    if not club_id:
+        raise ValueError("That doesn't look like a PlayCricket club link.")
+    try:
+        seasons = pc.fetch_organisation_seasons(club_id, max_age=0).get("seasons") or []
+    except Exception as error:
+        raise ValueError(f"PlayCricket doesn't know that club ({type(error).__name__}).") from error
+    if not seasons:
+        raise ValueError("PlayCricket has no seasons for that club.")
+    teams = pc.fetch_organisation_teams(club_id, seasons[0]["id"]).get("teams") or []
+    team_ids = {str(t.get("id")) for t in teams}
+    club_name, logo, display_names = "", "", []
+    for team in teams:
+        for grade in (team.get("grades") or ([team["grade"]] if team.get("grade") else []))[:1]:
+            for record in pc.fetch_grade_matches(grade["id"]).get("matches") or []:
+                for side in record.get("teams") or []:
+                    organisation = side.get("owningOrganisation") or {}
+                    if organisation.get("id") == club_id or str(side.get("id")) in team_ids:
+                        club_name = club_name or organisation.get("name") or ""
+                        logo = logo or organisation.get("logoUrl") or ""
+                        display_names.append(side.get("displayName") or "")
+            if club_name and len(set(display_names)) >= 3:
+                break
+        if club_name and len(set(display_names)) >= 3:
+            break
+    club_name = club_name.strip()
+    prefix = _common_prefix(sorted(set(display_names))) if len(set(display_names)) > 1 else ""
+    if not prefix:
+        prefix = CLUB_WORDS.sub("", club_name).strip()
+    short = prefix.split()[-1] if prefix else ""
+    return {"club_id": club_id, "club_name": club_name or prefix, "team_prefix": prefix,
+            "short_name": short, "logo_url": logo, "season": seasons[0].get("name") or "",
+            "teams": len(teams)}
+
+
 def live_board():
     """``board()`` plus when it was checked, or {"error": ...} when PlayCricket can't be reached."""
+    if not config.is_set_up():
+        return {"mode": "setup", "checked": _clock(_now())}
     try:
         result = board()
     except Exception as error:  # offline, PlayCricket down, unexpected reply

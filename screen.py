@@ -9,7 +9,11 @@ from html import escape
 
 import config
 
-SHORT_NAME = config.SHORT_NAME
+
+
+def _short():
+    """The club's name on the scoreboard, e.g. 'Roosters'."""
+    return config.get("short_name") or config.get("team_prefix") or "Us"
 GRID_MAX = 9
 
 
@@ -28,7 +32,7 @@ def _live_card(game):
         pill = f'<span class="pill pill-day">Day {game["day"]}</span>' + pill
     sides = "".join(
         f'<div class="side{" ours" if side["ours"] else ""}{" batting" if side["batting"] and state == "live" else ""}">'
-        f'<span class="side-name">{SHORT_NAME if side["ours"] else _e(side["name"])}</span>'
+        f'<span class="side-name">{_short() if side["ours"] else _e(side["name"])}</span>'
         f'<span class="side-score">{_e(side["score"]) or ("&ndash;" if state != "upcoming" else "")}</span>'
         f'<span class="side-overs">{_e(side["overs"]) + " ov" if side["overs"] else ""}</span></div>'
         for side in game["sides"]
@@ -68,7 +72,7 @@ def _trim(rows, keep, limit):
 
 
 def _side_name(side):
-    return SHORT_NAME if side["ours"] else side["name"]
+    return _short() if side["ours"] else side["name"]
 
 
 def _focus_card(game, wide, rows, page_note=""):
@@ -85,7 +89,7 @@ def _focus_card(game, wide, rows, page_note=""):
     body = ""
     if current:
         ours = {side["id"]: side["ours"] for side in game["sides"]}
-        batting_name = SHORT_NAME if ours.get(current["team_id"]) else current["team"]
+        batting_name = _short() if ours.get(current["team_id"]) else current["team"]
         bowling_side = next((side for side in game["sides"] if side["id"] != current["team_id"]), None)
         bowling_name = _side_name(bowling_side) if bowling_side else ""
         batters = _trim(current["batting"], lambda b: b["in"], rows)
@@ -116,7 +120,7 @@ def _focus_card(game, wide, rows, page_note=""):
         for inning in innings[:-1]:
             top_bat = sorted(inning["batting"], key=lambda b: -b["runs"])[:2]
             top_bowl = sorted(inning["bowling"], key=lambda b: (-b["wickets"], b["runs"]))[:2]
-            who = SHORT_NAME if ours.get(inning["team_id"]) else inning["team"]
+            who = _short() if ours.get(inning["team_id"]) else inning["team"]
             earlier += (
                 f'<p class="earlier"><strong>{_e(who)} {_e(inning["score"])}</strong> ({_e(inning["overs"])} ov)'
                 + (": " + ", ".join(f'{_e(b["name"])} {b["runs"]}' for b in top_bat) if top_bat else "")
@@ -161,7 +165,7 @@ def _tile(game):
             for side in game["sides"])
     else:
         line = " v ".join(
-            f'{_e(SHORT_NAME if side["ours"] else side["name"])} <strong>{_e(side["score"]) or "&ndash;"}</strong>'
+            f'{_e(_short() if side["ours"] else side["name"])} <strong>{_e(side["score"]) or "&ndash;"}</strong>'
             for side in game["sides"])
     note = _e(game["result"]) if state not in ("upcoming", "unscored") else ""
     return (f'<div class="tile tile-{state}"><div class="tile-head"><span class="tile-team">{_e(game["team"])}</span>'
@@ -213,13 +217,35 @@ def _message(text):
     return f'<p class="live-empty">{text}</p>'
 
 
+def _setup_message(board):
+    """What a new (or offline) box shows: how to reach its setup page."""
+    hotspot = board.get("hotspot")
+    addresses = board.get("addresses") or []
+    steps = []
+    if hotspot:
+        steps.append(f"On a phone, join the Wi-Fi network <strong>{_e(hotspot['ssid'])}</strong>"
+                     f" (password <strong>{_e(hotspot['password'])}</strong>)")
+        steps.append(f"Open <strong>http://{_e(hotspot['address'])}:{config.PORT}/setup</strong>")
+        steps.append("Choose the club's Wi-Fi, then follow the steps")
+    else:
+        where = " or ".join(f"<strong>http://{_e(a)}:{config.PORT}/setup</strong>" for a in addresses[:2])
+        steps.append("On a phone or laptop on the same Wi-Fi as this screen")
+        steps.append(f"Open {where}")
+        steps.append("Paste the link to your club's PlayCricket page, then follow the steps")
+    heading = "Connect me to Wi-Fi" if hotspot else "Let's get set up"
+    items = "".join(f"<li>{step}</li>" for step in steps)
+    return f'<div class="setup-screen"><h2>{heading}</h2><ol>{items}</ol></div>'
+
+
 def render_board(board):
     """The pages for one ``scores.live_board()`` result (None: still checking)."""
     pages = []
-    if board is None:
-        pages = [("Around the Grounds", _message("Checking PlayCricket&hellip;"))]
+    if board is not None and (board.get("hotspot") or board.get("mode") == "setup"):
+        pages = [(config.get("title"), _setup_message(board))]
+    elif board is None:
+        pages = [(config.get("title"), _message("Checking PlayCricket&hellip;"))]
     elif board.get("error"):
-        pages = [("Around the Grounds", _message(f"{_e(board['error'])}. Trying again shortly."))]
+        pages = [(config.get("title"), _message(f"{_e(board['error'])}. Trying again shortly."))]
     elif board["mode"] == "today" and any(g["state"] == "live" for g in board["games"]):
         # The games being played fill the screen (two side by side; three or
         # more take a page each); everything else is a small score along the bottom.
@@ -235,15 +261,15 @@ def render_board(board):
     elif board["mode"] == "today":
         pages = _grid_pages("Today\'s games", board["games"])
     else:
-        if board.get("results"):
+        if board.get("results") and config.get("show_results"):
             pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
         leaders = board.get("leaders")
-        if leaders and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
+        if leaders and config.get("show_leaders") and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
             pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
-        if board.get("coming"):
+        if board.get("coming") and config.get("show_coming"):
             pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
         if not pages:
-            pages = [("Around the Grounds", _message("No games scheduled."))]
+            pages = [(config.get("title"), _message("No games scheduled."))]
     return "".join(_page(title, inner, n == 0) for n, (title, inner) in enumerate(pages))
 
 
@@ -406,6 +432,18 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .leaders { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 36px; height: 770px; }
 .leaders table { font-size: 30px; }
 .leaders th.num { width: 100px; }
+table.card-table tr.in td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.topbar .brand { display: flex; align-items: center; gap: 24px; min-width: 0; }
+.topbar .logo { height: 72px; max-width: 160px; object-fit: contain; }
+.setup-screen { margin: 70px auto 0; max-width: 1400px; background: var(--panel); border-radius: 24px;
+                padding: 50px 70px; border-left: 12px solid var(--accent); }
+.setup-screen h2 { margin: 0 0 30px; font-size: 64px; color: var(--accent); }
+.setup-screen ol { margin: 0; padding-left: 50px; font-size: 42px; line-height: 1.6; }
+.sponsor { position: absolute; inset: 0; background: var(--bg); display: none; flex-direction: column;
+           align-items: center; justify-content: center; gap: 30px; z-index: 5; }
+.sponsor.on { display: flex; }
+.sponsor img { max-width: 1600px; max-height: 820px; object-fit: contain; }
+.sponsor p { margin: 0; font-size: 34px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
 /* Noto Sans is installed on the Pi; Segoe UI is the Windows look. */
 body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; }
 """
@@ -421,13 +459,15 @@ SCRIPT = """
 
   const body = document.getElementById("board"), title = document.getElementById("title");
   const checked = document.getElementById("checked"), dots = document.getElementById("dots");
+  const sponsorBox = document.getElementById("sponsor");
   const refresh = Number(stage.dataset.refresh) || 60, turn = Number(stage.dataset.page) || 20;
-  let page = 0, loaded = false;
+  let page = 0, loaded = false, turns = 0, sponsorAt = 0;
+  let sponsors = [], every = 0, sponsorSeconds = 10;
   const show = (n) => {
     const pages = Array.from(body.querySelectorAll(".live-page"));
     page = pages.length ? ((n % pages.length) + pages.length) % pages.length : 0;
     pages.forEach((p, i) => p.classList.toggle("on", i === page));
-    title.textContent = pages[page] ? pages[page].dataset.title : "Around the Grounds";
+    title.textContent = pages[page] ? pages[page].dataset.title : "";
     dots.innerHTML = pages.length > 1 ? pages.map((_, i) => `<span class="${i === page ? "on" : ""}"></span>`).join("") : "";
   };
   const load = async () => {
@@ -435,6 +475,9 @@ SCRIPT = """
       const response = await fetch("/board", { cache: "no-store" });
       if (!response.ok) return;
       const board = await response.json();
+      // Settings changed on the setup page: start again with the new look.
+      if (board.version && board.version !== stage.dataset.version) { location.reload(); return; }
+      sponsors = board.sponsors || []; every = board.sponsor_every || 0; sponsorSeconds = board.sponsor_seconds || 10;
       // PlayCricket unreachable: keep the last scores up and say so.
       if (board.error && loaded) { checked.textContent = `${board.checked} (couldn't reach PlayCricket)`; return; }
       body.innerHTML = board.html;
@@ -445,8 +488,22 @@ SCRIPT = """
       // the scoreboard itself is restarting: try again next time
     }
   };
+  // Every few pages, a sponsor's slide.
+  const nextPage = () => {
+    if (sponsorBox.classList.contains("on")) return;
+    turns += 1;
+    if (sponsors.length && every > 0 && turns % every === 0) {
+      const sponsor = sponsors[sponsorAt % sponsors.length]; sponsorAt += 1;
+      sponsorBox.querySelector("img").src = sponsor.url;
+      sponsorBox.querySelector("span").textContent = sponsor.name || "";
+      sponsorBox.classList.add("on");
+      setTimeout(() => { sponsorBox.classList.remove("on"); show(page + 1); }, sponsorSeconds * 1000);
+      return;
+    }
+    show(page + 1);
+  };
   load(); setInterval(load, refresh * 1000);
-  setInterval(() => show(page + 1), turn * 1000);
+  setInterval(nextPage, turn * 1000);
 
   const clock = document.getElementById("clock-time"), day = document.getElementById("clock-date");
   const time = () => {
@@ -459,22 +516,44 @@ SCRIPT = """
 """
 
 
+def _blend(colour, other, amount):
+    """Mix two #rrggbb colours: amount 0 = colour, 1 = other."""
+    try:
+        a = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+        b = [int(other[i:i + 2], 16) for i in (1, 3, 5)]
+    except (ValueError, TypeError, IndexError):
+        return colour
+    return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
+
+
+def theme_css(settings):
+    bg, panel, text, accent = (settings["background"], settings["panel"], settings["text"], settings["accent"])
+    return (f":root {{ --bg: {bg}; --panel: {panel}; --text: {text}; --accent: {accent};"
+            f" --line: {_blend(panel, text, 0.14)}; --muted: {_blend(text, bg, 0.35)}; }}")
+
+
 def render_page():
+    settings = config.load()
+    logo = (f'<img class="logo" src="/media/logo?v={escape(config.version())}" alt="">'
+            if settings.get("logo") else "")
+    club = settings.get("club_name") or "Set up needed"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Around the Grounds</title>
-<style>{STYLE}</style></head>
+<title>{escape(settings["title"])}</title>
+<style>{STYLE}{theme_css(settings)}</style></head>
 <body>
-<div id="stage" data-refresh="{config.REFRESH_SECONDS}" data-page="{config.PAGE_SECONDS}">
+<div id="stage" data-refresh="{settings["refresh_seconds"]}" data-page="{settings["page_seconds"]}"
+     data-version="{escape(config.version())}">
   <div class="topbar">
-    <div class="club">AROUND THE GROUNDS<small>{escape(config.CLUB_NAME.upper())}</small></div>
+    <div class="brand">{logo}<div class="club">{escape(settings["title"].upper())}<small>{escape(club.upper())}</small></div></div>
     <div class="clock"><span id="clock-time"></span><small id="clock-date"></small></div>
   </div>
   <article class="slide active" data-screen="live">
-    <header class="slide-head"><h1 id="title">Around the Grounds</h1></header>
+    <header class="slide-head"><h1 id="title">{escape(settings["title"])}</h1></header>
     <div class="slide-body" id="board">{render_board(None)}</div>
   </article>
+  <div class="sponsor" id="sponsor"><p>Proudly supported by</p><img alt=""><p><span></span></p></div>
   <div class="footer"><span>From PlayCricket · checked <span id="checked">&hellip;</span></span>
   <span class="dots" id="dots"></span></div>
 </div>

@@ -1,6 +1,9 @@
 """Tests with made-up teams and players (no real names in this repo)."""
 
+import os
+import re
 import sys
+import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -8,13 +11,19 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# A made-up club, with its settings in a throwaway folder.
+DATA = tempfile.TemporaryDirectory()
+os.environ.update(ATG_DATA_DIR=DATA.name, ATG_CLUB_ID="11111111-2222-3333-4444-555555555555",
+                  ATG_CLUB_NAME="Testville Tigers Cricket Club", ATG_TEAM_PREFIX="Testville Tigers",
+                  ATG_SHORT_NAME="Tigers")
+
 import config  # noqa: E402
 import playcricket as pc  # noqa: E402
 import scores  # noqa: E402
 import screen  # noqa: E402
 import server  # noqa: E402
 
-CLUB = config.CLUB_ID
+CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
 
 
@@ -29,7 +38,7 @@ def fixture(match_id, status, teams, start="2026-11-21T13:00:00.0000000+11:00", 
             "venue": {"name": "Home Ground", "playingSurface": {"name": "Oval 1"}}, "teams": teams}
 
 
-OURS = config.CLUB_NAME
+OURS = config.get("team_prefix")
 LIVE = fixture("live1", "LIVE", [team("r1", f"{OURS} U13 Mixed", "5-70", 24, home=True, club=True),
                                  team("o1", "Visitors U13", "0-42", 5.2, batting=True)],
                start="2026-11-21T08:30:00.0000000+11:00")
@@ -131,9 +140,9 @@ class ScreenTests(unittest.TestCase):
         html = screen.render_board(result)
         self.assertEqual(html.count('class="live-page'), 1)
         self.assertIn('data-title="Live scores"', html)
-        self.assertIn(f"Bowling · {config.SHORT_NAME}", html)
+        self.assertIn(f"Bowling · {config.get("short_name")}", html)
         self.assertIn('<td>A Batter</td><td class="num">30*</td>', html)
-        self.assertIn(f"{config.SHORT_NAME} 5/70</strong> (24 ov): D Hitter 40", html)
+        self.assertIn(f"{config.get("short_name")} 5/70</strong> (24 ov): D Hitter 40", html)
         self.assertIn('class="strip"', html)
 
     def test_three_live_games_take_a_page_each(self):
@@ -191,6 +200,107 @@ class ServerTests(unittest.TestCase):
             data = client.get("/board").get_json()
         self.assertEqual(data["checked"], "1:00 pm")
         self.assertIn("Trying again", data["html"])
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
+
+
+class SetupTests(unittest.TestCase):
+    def setUp(self):
+        self.client = server.app.test_client()
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+
+    def token(self):
+        page = self.client.get("/setup").get_data(as_text=True)
+        return re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+
+    def test_first_pin_then_setup(self):
+        self.assertIn("Choose a setup PIN", self.client.get("/setup").get_data(as_text=True))
+        self.client.post("/setup/pin", data={"pin": "12", "again": "12"})
+        self.assertIn("4 to 8 digits", self.client.get("/setup").get_data(as_text=True))
+        self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+        self.assertIn("Link to your club", self.client.get("/setup").get_data(as_text=True))
+        # A second visitor needs the PIN.
+        other = server.app.test_client()
+        self.assertIn("Enter the setup PIN", other.get("/setup").get_data(as_text=True))
+        with mock.patch.object(server.time, "sleep"):
+            other.post("/setup/login", data={"pin": "0000"})
+        self.assertIn("isn&#x27;t right", other.get("/setup").get_data(as_text=True))
+        other.post("/setup/login", data={"pin": "2468"})
+        self.assertIn("Link to your club", other.get("/setup").get_data(as_text=True))
+        # Changing settings without the form's token is refused.
+        self.client.post("/setup/look", data={"title": "Hacked"})
+        self.assertNotEqual(config.get("title"), "Hacked")
+
+    def test_club_look_and_sponsors(self):
+        self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+        found = {"club_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "club_name": "Riverside Cricket Club",
+                 "team_prefix": "Riverside", "short_name": "Riverside", "logo_url": "", "season": "Summer", "teams": 8}
+        with mock.patch.object(scores, "discover_club", return_value=found) as discover:
+            self.client.post("/setup/club/find", data={
+                "csrf": self.token(), "link": "https://play.cricket.com.au/club/riverside/" + found["club_id"]})
+        discover.assert_called_once_with(found["club_id"])
+        self.assertIn("Is this your club?", self.client.get("/setup").get_data(as_text=True))
+        self.client.post("/setup/club/save", data={"csrf": self.token(), "club_id": found["club_id"],
+                                                   "club_name": "Riverside Cricket Club", "short_name": "Rivers",
+                                                   "team_prefix": "Riverside"})
+        self.assertEqual((config.get("club_id"), config.get("short_name")), (found["club_id"], "Rivers"))
+
+        self.client.post("/setup/look", data={"csrf": self.token(), "title": "Game Day", "preset": "Black and red"})
+        self.assertEqual((config.get("title"), config.get("accent")), ("Game Day", "#e03131"))
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn("GAME DAY", page)
+        self.assertIn("--accent: #e03131", page)
+
+        from io import BytesIO
+        self.client.post("/setup/sponsors/add", data={"csrf": self.token(), "name": "Local Bakery",
+                                                      "image": (BytesIO(PNG), "bakery.png")},
+                         content_type="multipart/form-data")
+        self.client.post("/setup/sponsors/add", data={"csrf": self.token(), "image": (BytesIO(b"not an image"), "x.png")},
+                         content_type="multipart/form-data")
+        sponsors = config.get("sponsors")
+        self.assertEqual([s["name"] for s in sponsors], ["Local Bakery"])
+        self.assertEqual(self.client.get(f"/media/sponsors/{sponsors[0]['file']}").data, PNG)
+        with mock.patch.object(scores, "live_board", return_value={"error": "x", "checked": "1:00 pm"}):
+            data = self.client.get("/board").get_json()
+        self.assertEqual(data["sponsors"][0]["name"], "Local Bakery")
+        self.assertEqual(data["version"], config.version())
+        self.client.post("/setup/sponsors/remove", data={"csrf": self.token(), "file": sponsors[0]["file"]})
+        self.assertEqual(config.get("sponsors"), [])
+
+    def test_new_box_asks_to_be_set_up(self):
+        config.save(club_id="")
+        data = self.client.get("/board").get_json()
+        self.assertIn("Let&#x27;s get set up", data["html"].replace("'", "&#x27;"))
+        self.assertIn("/setup", data["html"])
+        with mock.patch("system.hotspot", return_value={"ssid": "ATG-Setup", "password": "scoreboard",
+                                                        "address": "10.42.0.1"}):
+            data = self.client.get("/board").get_json()
+        self.assertIn("Connect me to Wi-Fi", data["html"])
+        self.assertIn("http://10.42.0.1:8080/setup", data["html"])
+
+
+class DiscoverTests(unittest.TestCase):
+    def test_club_from_its_playcricket_link(self):
+        club = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        self.assertEqual(scores.club_id_from(f"https://play.cricket.com.au/club/riverside-cc/{club.upper()}"), club)
+        self.assertEqual(scores.club_id_from("not a link"), "")
+        mine = {"id": club, "name": "Riverside Cricket Club Inc", "logoUrl": "https://example.org/logo.png"}
+        matches = {"matches": [{"teams": [
+            {"id": "t1", "displayName": "Riverside Rams 1st XI", "owningOrganisation": mine},
+            {"id": "t9", "displayName": "Elsewhere 1st XI", "owningOrganisation": {"id": "other"}}]},
+            {"teams": [{"id": "t2", "displayName": "Riverside Rams U13", "owningOrganisation": mine}]},
+            {"teams": [{"id": "t3", "displayName": "Riverside Rams 2nd XI", "owningOrganisation": mine}]}]}
+        with mock.patch.object(pc, "fetch_organisation_seasons", return_value={"seasons": [{"id": "s", "name": "Summer"}]}), \
+             mock.patch.object(pc, "fetch_organisation_teams", return_value={"teams": [
+                 {"id": "t1", "grades": [{"id": "g1"}]}, {"id": "t2", "grades": [{"id": "g2"}]}]}), \
+             mock.patch.object(pc, "fetch_grade_matches", return_value=matches):
+            found = scores.discover_club(club)
+        self.assertEqual((found["club_name"], found["team_prefix"], found["short_name"]),
+                         ("Riverside Cricket Club Inc", "Riverside Rams", "Rams"))
+        self.assertEqual(found["logo_url"], "https://example.org/logo.png")
+        with self.assertRaises(ValueError):
+            scores.discover_club("")
 
 
 if __name__ == "__main__":
