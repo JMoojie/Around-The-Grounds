@@ -289,7 +289,7 @@ def _whole(name, low, high, default):
 def setup_pages():
     config.save(page_seconds=_whole("page_seconds", 5, 300, 20),
                 refresh_seconds=_whole("refresh_seconds", 30, 600, 60),
-                **{key: request.form.get(key) == "1" for key in ("show_results", "show_leaders", "show_coming")})
+                **{key: request.form.get(key) == "1" for key in ("show_results", "show_leaders", "show_coming", "live_only")})
     return _done("Pages saved.")
 
 

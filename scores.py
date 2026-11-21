@@ -311,26 +311,28 @@ def _ordered(games):
 
 
 def board(today=None):
-    """{"mode": "today", "games": [...]} on a match day, otherwise
-    {"mode": "between", "results": [...], "results_day": date, "coming": [...], "coming_day": date}.
-    Raises on network errors."""
+    """{"mode": "today", "games": [...]} on a match day, otherwise {"mode": "between",
+    "results": [...], "results_day": date}. Both also give the next match day's fixtures
+    ("coming", "coming_day"). Raises on network errors."""
     today = today or _now().date()
     with _lock:  # several screens asking at once share one set of fetches
         fixtures, team_ids, names = _club_fixtures()
         todays = [(r, g) for r, g in fixtures if is_today(r, today)]
+        future = [d for d in (_first_day(r) for r, _ in fixtures) if d and d > today]
+        coming_day = min(future) if future else None
+        # The next match day's fixtures and past results come from the fixture
+        # list's own scores: no scorecards needed.
+        coming = _ordered(summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+                          if coming_day and _first_day(r) == coming_day)
         if todays:
-            return {"mode": "today", "games": _ordered(
+            return {"mode": "today", "coming": coming, "coming_day": coming_day, "games": _ordered(
                 summarise(r, _with_scorecard(r), team_ids, names, g, today) for r, g in todays)}
         past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
-        future = [d for d in (_first_day(r) for r, _ in fixtures) if d and d > today]
-        results_day, coming_day = (max(past) if past else None), (min(future) if future else None)
-        # Results come from the fixture list's own scores: no scorecards needed.
+        results_day = max(past) if past else None
         results = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
                    if results_day and _first_day(r) == results_day]
-        coming = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
-                  if coming_day and _first_day(r) == coming_day]
     return {"mode": "between", "results": _ordered(results), "results_day": results_day,
-            "coming": _ordered(coming), "coming_day": coming_day}
+            "coming": coming, "coming_day": coming_day}
 
 
 def _player_name(participant):
@@ -448,10 +450,11 @@ def live_board():
         result = board()
     except Exception as error:  # offline, PlayCricket down, unexpected reply
         return {"error": f"Couldn't reach PlayCricket ({type(error).__name__})", "checked": _clock(_now())}
-    if result["mode"] == "between":
+    result["leaders"] = None
+    if config.get("show_leaders"):
         try:
             result["leaders"] = season_leaders()
         except Exception:
-            result["leaders"] = None  # results and fixtures still show
+            pass  # the games, results and fixtures still show
     result["checked"] = _clock(_now())
     return result

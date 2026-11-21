@@ -145,6 +145,24 @@ class ScreenTests(unittest.TestCase):
         self.assertIn(f"{config.get("short_name")} 5/70</strong> (24 ov): D Hitter 40", html)
         self.assertIn('class="strip"', html)
 
+    def test_match_day_also_shows_leaders_and_coming_up(self):
+        result = run_board([LIVE, UPCOMING, NEXT_WEEK])
+        self.assertEqual([g["team"] for g in result["coming"]], ["3rd XI"])
+        result["leaders"] = {"season": "Summer", "runs": [("Dana Hitter", 160, "66")], "wickets": [], "catches": []}
+        titles = re.findall(r'data-title="([^"]+)"', screen.render_board(result))
+        self.assertEqual(titles, ["Live scores", "Season leaders · Summer", "Coming up · Saturday 28 November"])
+        config.save(live_only=True)
+        try:
+            self.assertEqual(re.findall(r'data-title="([^"]+)"', screen.render_board(result)), ["Live scores"])
+        finally:
+            config.save(live_only=False)
+        # Before any game starts: today's games, then the rest.
+        quiet = run_board([UPCOMING, NEXT_WEEK])
+        quiet["leaders"] = result["leaders"]
+        self.assertEqual(re.findall(r'data-title="([^"]+)"', screen.render_board(quiet)),
+                         ["Today&#x27;s games", "Season leaders · Summer",
+                          "Coming up · Saturday 28 November"])
+
     def test_three_live_games_take_a_page_each(self):
         game = scores.summarise(LIVE, SCORECARD, {"r1"}, {}, "U13", TODAY)
         html = screen.render_board({"mode": "today", "games": [game, dict(game, id="b"), dict(game, id="c")]})

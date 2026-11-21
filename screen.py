@@ -237,6 +237,17 @@ def _setup_message(board):
     return f'<div class="setup-screen"><h2>{heading}</h2><ol>{items}</ol></div>'
 
 
+def _extra_pages(board):
+    """Season leaders and the next match day, after the day's own pages."""
+    pages = []
+    leaders = board.get("leaders")
+    if leaders and config.get("show_leaders") and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
+        pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
+    if board.get("coming") and config.get("show_coming"):
+        pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
+    return pages
+
+
 def render_board(board):
     """The pages for one ``scores.live_board()`` result (None: still checking)."""
     pages = []
@@ -258,16 +269,14 @@ def render_board(board):
             cards = "".join(_focus_card(g, len(group) == 1, 6 if others else 10, note) for g in group)
             strip = f'<div class="strip">{"".join(_tile(g) for g in others)}</div>' if others else ""
             pages.append(("Live scores", f'<div class="focus focus-{len(group)}">{cards}</div>{strip}'))
+        if not config.get("live_only"):
+            pages += _extra_pages(board)
     elif board["mode"] == "today":
-        pages = _grid_pages("Today\'s games", board["games"])
+        pages = _grid_pages("Today\'s games", board["games"]) + _extra_pages(board)
     else:
         if board.get("results") and config.get("show_results"):
             pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
-        leaders = board.get("leaders")
-        if leaders and config.get("show_leaders") and (leaders["runs"] or leaders["wickets"] or leaders["catches"]):
-            pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
-        if board.get("coming") and config.get("show_coming"):
-            pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
+        pages += _extra_pages(board)
         if not pages:
             pages = [(config.get("title"), _message("No games scheduled."))]
     return "".join(_page(title, inner, n == 0) for n, (title, inner) in enumerate(pages))

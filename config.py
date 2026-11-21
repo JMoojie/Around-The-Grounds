@@ -47,6 +47,7 @@ DEFAULTS = {
     "show_results": True,
     "show_leaders": True,
     "show_coming": True,
+    "live_only": False,               # while games are being played, show only the live scores
     # Sponsors: [{"file": ..., "name": ...}], one shown after every N pages.
     "sponsors": [],
     "sponsor_every": 3,

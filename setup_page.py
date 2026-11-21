@@ -168,8 +168,12 @@ def setup_page(settings, token, found=None, flash=None):
     <input id="page-seconds" name="page_seconds" type="number" min="5" max="300" value="{settings['page_seconds']}">
     <label for="refresh">Seconds between score checks</label>
     <input id="refresh" name="refresh_seconds" type="number" min="30" max="600" value="{settings['refresh_seconds']}">
-    <label>On days without games, show</label>
-    {tick("show_results", "Latest results")}{tick("show_leaders", "Season leaders")}{tick("show_coming", "Coming up")}
+    <label>Also show</label>
+    {tick("show_leaders", "Season leaders")}
+    {tick("show_coming", "Coming up (the next match day's games)")}
+    {tick("show_results", "Latest results (on days without games)")}
+    <label>While games are being played</label>
+    {tick("live_only", "Show only the live scores")}
     <button type="submit">Save pages</button>''', token)}</section>""")
 
     # ---- Sponsors
