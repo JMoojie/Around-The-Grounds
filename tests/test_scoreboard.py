@@ -417,6 +417,20 @@ class ExtraPagesTests(unittest.TestCase):
             self.client.delete("/api/pages", headers={"Authorization": "Bearer " + "k" * 32})
         self.assertIsNone(extra_pages.load())
 
+    def test_spread_pages_are_mixed_in(self):
+        self.assertEqual(screen._spread(list("ABCDEF"), ["1", "2"]), list("ABC1DE2F"))
+        self.assertEqual(screen._spread(list("AB"), ["1", "2", "3"]), ["A", "1", "B", "2", "3"])
+        self.assertEqual(screen._spread([], ["1"]), ["1"])
+        config.save(extra_key="k" * 32)
+        pack = {"pages": [{"title": "Career leaders", "html": "<p>a</p>"}, {"title": "Records", "html": "<p>b</p>"}]
+                + [{"title": f"Profile {n}", "html": f"<p>{n}</p>", "spread": True} for n in (1, 2)]}
+        self.assertEqual(self.send(pack, "k" * 32).status_code, 200)
+        result = run_board([LAST_WEEK, NEXT_WEEK], today=date(2026, 11, 18))
+        result["leaders"] = {"season": "Summer", "runs": [("Dana Hitter", 160, "66")], "wickets": [], "catches": []}
+        titles = re.findall(r'data-title="([^"]+)"', screen.render_board(result))
+        self.assertEqual(titles, ["Latest results · Saturday 14 November", "Season leaders · Summer", "Profile 1",
+                                  "Career leaders", "Records", "Profile 2", "Coming up · Saturday 28 November"])
+
     def test_setup_makes_a_key(self):
         self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
         page = self.client.get("/setup").get_data(as_text=True)

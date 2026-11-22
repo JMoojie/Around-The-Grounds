@@ -11,6 +11,9 @@ The JSON sent:
      "css": "optional extra rules",
      "pages": [{"title": "Career leaders", "html": "<section class='panel'>...</section>",
                 "columns": 3, "screen": "leaders"}]}
+
+A page with "spread": true (e.g. one of several player profiles) is spaced out
+evenly through the whole rotation instead of shown with the others in a block.
 """
 
 import json
@@ -55,7 +58,9 @@ def clean(pack):
             columns = 1
         screen = str(page.get("screen") or "")
         pages.append({"title": title, "html": html, "columns": columns,
-                      "screen": screen if SCREEN.match(screen) else ""})
+                      "screen": screen if SCREEN.match(screen) else "",
+                      # spread: shown spaced out through the whole rotation, not in a block
+                      "spread": page.get("spread") is True})
     css = str(pack.get("css") or "")
     if len(css) > MAX_CSS or "<" in css or "@import" in css.lower() or "url(" in css.lower():
         raise ValueError("The css isn't allowed (too long, or it loads other files).")

@@ -250,17 +250,40 @@ def _setup_message(board):
     return f'<div class="setup-screen"><h2>{heading}</h2><ol>{items}</ol></div>'
 
 
-def _sent_pages():
-    """Pages another program sent (extra_pages.py), with their own extra styles."""
+def _sent(spread):
+    """Pages another program sent (extra_pages.py): those shown in a block, or
+    (spread=True) those spaced out through the rotation. The first page sent
+    carries the pack's extra styles."""
     pack = extra_pages.load() if config.get("show_extra") else None
     if not pack or not pack["pages"]:
         return []
     pages = []
     for n, page in enumerate(pack["pages"]):
+        if bool(page.get("spread")) != spread:
+            continue
         style = f"<style>{pack['css']}</style>" if n == 0 and pack.get("css") else ""
         screen = f' data-screen="{page["screen"]}"' if page.get("screen") else ""
         pages.append((page["title"], f'{style}<div class="extra-grid cols-{page["columns"]}"{screen}>{page["html"]}</div>'))
     return pages
+
+
+def _sent_pages():
+    return _sent(spread=False)
+
+
+def _spread(pages, extras):
+    """``extras`` spaced out evenly between ``pages`` (never before the first)."""
+    if not pages:
+        return extras
+    after = {}
+    for n, extra in enumerate(extras):
+        slot = min(len(pages) - 1, int((n + 1) * len(pages) / (len(extras) + 1)))
+        after.setdefault(slot, []).append(extra)
+    mixed = []
+    for n, page in enumerate(pages):
+        mixed.append(page)
+        mixed += after.get(n, [])
+    return mixed
 
 
 def _extra_pages(board):
@@ -298,13 +321,13 @@ def render_board(board):
             strip = f'<div class="strip">{"".join(_tile(g) for g in others)}</div>' if others else ""
             pages.append(("Live scores", f'<div class="focus focus-{len(group)}">{cards}</div>{strip}'))
         if not config.get("live_only"):
-            pages += _extra_pages(board)
+            pages = _spread(pages + _extra_pages(board), _sent(spread=True))
     elif board["mode"] == "today":
-        pages = _grid_pages("Today\'s games", board["games"]) + _extra_pages(board)
+        pages = _spread(_grid_pages("Today\'s games", board["games"]) + _extra_pages(board), _sent(spread=True))
     else:
         if board.get("results") and config.get("show_results"):
             pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
-        pages += _extra_pages(board)
+        pages = _spread(pages + _extra_pages(board), _sent(spread=True))
         if not pages:
             pages = [(config.get("title"), _message("No games scheduled."))]
     return "".join(_page(title, inner, n == 0) for n, (title, inner) in enumerate(pages))
