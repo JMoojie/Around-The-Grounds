@@ -17,6 +17,13 @@ for _ in $(seq 1 90); do
     sleep 2
 done
 
+# An invisible mouse cursor: cage draws one in the middle of the screen
+# whenever anything that looks like a mouse is plugged in (many wireless
+# keyboard receivers do), and nobody uses a mouse on the scoreboard.
+export XCURSOR_PATH="$(cd "$(dirname "$0")" && pwd)/cursor-theme"
+export XCURSOR_THEME=hidden
+export XCURSOR_SIZE=24
+
 BROWSER="$(command -v chromium-browser || command -v chromium)"
 cage -s -- "$BROWSER" \
     --kiosk --start-fullscreen --incognito \

@@ -2,3 +2,4 @@
 # Shell scripts and settings must keep Linux line endings, or they won't run on the Pi.
 *.sh text eol=lf
 *.env text eol=lf
+deploy/pi/cursor-theme/hidden/cursors/* binary
