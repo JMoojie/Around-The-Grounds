@@ -178,7 +178,7 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
     <input id="refresh" name="refresh_seconds" type="number" min="30" max="600" value="{settings['refresh_seconds']}">
     <label>Also show</label>
     {tick("show_leaders", "Season leaders")}
-    {tick("show_coming", "Coming up (the next match day's games)")}
+    {tick("show_coming", "Coming up (every game in the week ahead)")}
     {tick("show_results", "Latest results (on days without games)")}
     <label>While games are being played</label>
     {tick("live_only", "Show only the live scores")}

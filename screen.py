@@ -22,13 +22,15 @@ def _e(value):
     return escape(str(value))
 
 
-def _live_card(game):
+def _live_card(game, with_day=False):
+    """A game's card. ``with_day`` adds the day to the start time (for the week ahead)."""
     state = game["state"]
+    start = f"{game.get('weekday', '')} {game['start']}".strip() if with_day and game["start"] else game["start"]
     pill = {"live": '<span class="pill pill-live">LIVE</span>',
             "done": '<span class="pill pill-done">Result</span>',
             "off": '<span class="pill pill-off">Abandoned</span>',
             "unscored": '<span class="pill pill-off">No live score</span>'}.get(
-        state, f'<span class="pill pill-soon">{_e(game["start"] or "Today")}</span>')
+        state, f'<span class="pill pill-soon">{_e(start or "Today")}</span>')
     if game.get("day"):
         pill = f'<span class="pill pill-day">Day {game["day"]}</span>' + pill
     sides = "".join(
@@ -39,7 +41,7 @@ def _live_card(game):
         for side in game["sides"]
     )
     if state == "upcoming":
-        note = f"Starts {_e(game['start'])} · {'Home' if game['home'] else 'Away'}" if game["start"] else ""
+        note = f"Starts {_e(start)} · {'Home' if game['home'] else 'Away'}" if game["start"] else ""
     elif state == "unscored":
         note = f"Started {_e(game['start'])} · result to come"
     else:
@@ -178,11 +180,21 @@ def _day(day):
     return f"{day:%A} {day.day} {day:%B}" if day else ""
 
 
+def _days(first, last):
+    """'Friday 27 November', or 'Fri 27 – Sun 29 November' for several days."""
+    if not first:
+        return ""
+    if not last or last == first:
+        return _day(first)
+    start = f"{first:%a} {first.day}" + ("" if first.month == last.month else f" {first:%B}")
+    return f"{start} – {last:%a} {last.day} {last:%B}"
+
+
 def _page(title, inner, first=False):
     return f'<div class="live-page{" on" if first else ""}" data-title="{escape(title, quote=True)}">{inner}</div>'
 
 
-def _grid_pages(title, games):
+def _grid_pages(title, games, with_day=False):
     """Cards in a grid, nine to a page."""
     pages = []
     for start in range(0, len(games), GRID_MAX):
@@ -190,7 +202,7 @@ def _grid_pages(title, games):
         columns = 2 if len(chunk) <= 4 else 3
         rows = -(-len(chunk) // columns)
         pages.append((title, f'<div class="live-grid cols{columns} rows{rows}">'
-                      + "".join(_live_card(g) for g in chunk) + "</div>"))
+                      + "".join(_live_card(g, with_day) for g in chunk) + "</div>"))
     return pages
 
 
@@ -259,7 +271,8 @@ def _extra_pages(board):
         pages.append((f"Season leaders · {leaders['season']}", _leaders_page(leaders)))
     pages += _sent_pages()
     if board.get("coming") and config.get("show_coming"):
-        pages += _grid_pages(f"Coming up · {_day(board['coming_day'])}", board["coming"])
+        pages += _grid_pages(f"Coming up · {_days(board['coming_day'], board.get('coming_until'))}",
+                             board["coming"], with_day=True)
     return pages
 
 

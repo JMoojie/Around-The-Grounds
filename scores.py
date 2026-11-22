@@ -6,7 +6,7 @@ games, the latest results and the next match day's fixtures.
 """
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
 import playcricket as pc
@@ -26,6 +26,7 @@ RESULT_MAX_AGE = 60 * 60         # a game already finished
 LEADERS_MAX_AGE = 60 * 60        # season statistics (they change after games are finalised)
 LEADERS_ROWS = 10
 
+COMING_DAYS = 7                  # "Coming up": every game in the week from the next match day
 STATE_ORDER = {"live": 0, "upcoming": 1, "done": 2, "unscored": 3, "off": 4}
 
 _lock = threading.Lock()
@@ -248,6 +249,7 @@ def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", 
         "round": (record.get("round") or {}).get("name", ""),
         "state": state,
         "start": _clock(starts[day - 1] if day else starts[0]) if starts else "",
+        "weekday": (starts[day - 1] if day else starts[0]).strftime("%a") if starts else "",
         "start_sort": starts[0].isoformat() if starts else "",
         "day": day,  # 1 or 2 for a two-day game, else 0
         "venue": ground,
@@ -313,7 +315,7 @@ def _ordered(games):
 def board(today=None):
     """{"mode": "today", "games": [...]} on a match day, otherwise {"mode": "between",
     "results": [...], "results_day": date}. Both also give the next match day's fixtures
-    ("coming", "coming_day"). Raises on network errors."""
+    ("coming", from "coming_day" to "coming_until": the week ahead). Raises on network errors."""
     today = today or _now().date()
     with _lock:  # several screens asking at once share one set of fetches
         fixtures, team_ids, names = _club_fixtures()
@@ -322,17 +324,22 @@ def board(today=None):
         coming_day = min(future) if future else None
         # The next match day's fixtures and past results come from the fixture
         # list's own scores: no scorecards needed.
-        coming = _ordered(summarise(r, None, team_ids, names, g, today) for r, g in fixtures
-                          if coming_day and _first_day(r) == coming_day)
+        coming_until = coming_day + timedelta(days=COMING_DAYS - 1) if coming_day else None
+        coming = sorted((summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+                         if coming_day and _first_day(r) and coming_day <= _first_day(r) <= coming_until),
+                        key=lambda game: (game["start_sort"], game["team"]))
+        if coming:
+            coming_until = max(_local(game["start_sort"]).date() for game in coming)
         if todays:
-            return {"mode": "today", "coming": coming, "coming_day": coming_day, "games": _ordered(
+            return {"mode": "today", "coming": coming, "coming_day": coming_day, "coming_until": coming_until,
+                    "games": _ordered(
                 summarise(r, _with_scorecard(r), team_ids, names, g, today) for r, g in todays)}
         past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
         results_day = max(past) if past else None
         results = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
                    if results_day and _first_day(r) == results_day]
     return {"mode": "between", "results": _ordered(results), "results_day": results_day,
-            "coming": coming, "coming_day": coming_day}
+            "coming": coming, "coming_day": coming_day, "coming_until": coming_until}
 
 
 def _player_name(participant):

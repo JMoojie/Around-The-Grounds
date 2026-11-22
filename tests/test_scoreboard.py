@@ -165,6 +165,23 @@ class ScreenTests(unittest.TestCase):
                          ["Today&#x27;s games", "Season leaders · Summer",
                           "Coming up · Saturday 28 November"])
 
+    def test_coming_up_shows_the_week_ahead(self):
+        friday = fixture("fri", "UPCOMING", [team("r5", f"{OURS} U13", club=True), team("o5", "Juniors FC")],
+                         start="2026-11-27T18:00:00.0000000+11:00")
+        sunday = fixture("sun", "UPCOMING", [team("r6", f"{OURS} U18", club=True), team("o6", "Sunday CC")],
+                         start="2026-11-29T09:00:00.0000000+11:00")
+        later = fixture("dec", "UPCOMING", [team("r7", f"{OURS} 4th XI", club=True), team("o7", "Far Away")],
+                        start="2026-12-05T13:00:00.0000000+11:00")
+        undated = dict(fixture("tbc", "UPCOMING", [team("r8", f"{OURS} 5th XI", club=True), team("o8", "TBC")]),
+                       matchSchedule=[])  # PlayCricket fixtures without a date yet
+        result = run_board([LAST_WEEK, sunday, NEXT_WEEK, friday, later, undated], today=date(2026, 11, 24))
+        # Friday's, Saturday's and Sunday's games, in order; the week after isn't included.
+        self.assertEqual([g["team"] for g in result["coming"]], ["U13", "3rd XI", "U18"])
+        html = screen.render_board(result)
+        self.assertIn('data-title="Coming up · Fri 27 – Sun 29 November"', html)
+        self.assertIn("Sat 1:00 pm", html)
+        self.assertIn("Starts Fri 6:00 pm", html)
+
     def test_three_live_games_take_a_page_each(self):
         game = scores.summarise(LIVE, SCORECARD, {"r1"}, {}, "U13", TODAY)
         html = screen.render_board({"mode": "today", "games": [game, dict(game, id="b"), dict(game, id="c")]})
