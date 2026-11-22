@@ -20,6 +20,7 @@ from urllib.parse import parse_qsl, urlencode, urlunparse
 PAGE_LIMIT = 2 * 1024 * 1024
 IMAGE_LIMIT = 4 * 1024 * 1024
 TIMEOUT = 15
+TAGLINE_LIMIT = 400  # the whole description; only something enormous is cut, at a sentence
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; AroundTheGrounds scoreboard; sponsor slide)"}
 COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 # Pages some websites show automated visitors instead of their home page.
@@ -180,8 +181,7 @@ def from_website(address):
                          "Upload an image of the sponsor's logo or advert instead.")
 
     tagline = re.sub(r"\s+", " ", page.meta.get("og:description") or page.meta.get("description") or "").strip()
-    if len(tagline) > 110:
-        tagline = tagline[:107].rsplit(" ", 1)[0].rstrip(" .,;:-") + "…"
+    tagline = clip_tagline(tagline)
     colour = page.meta.get("theme-color", "")
     colour = colour.lower() if COLOUR.match(colour) else ""
     if len(colour) == 4:
@@ -203,6 +203,16 @@ def from_website(address):
                 options.append(absolute)
     return {"name": _name(page, host), "tagline": tagline, "colour": colour or "#ffffff",
             "web": host, "logo_url": options[0] if options else "", "logo_options": options[:4]}
+
+
+def clip_tagline(text):
+    """The full description, unless it's enormous: then up to the last full sentence that fits."""
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(text) <= TAGLINE_LIMIT:
+        return text
+    cut = text[:TAGLINE_LIMIT]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    return cut[:end + 1] if end > 80 else cut.rsplit(" ", 1)[0].rstrip(" .,;:-") + "…"
 
 
 def download_logo(url):
@@ -231,6 +241,11 @@ def _text_colour(background):
     return "#111111" if luminance > 0.45 else "#ffffff"
 
 
+def _tag_size(text):
+    """Longer descriptions use smaller text, so all of it fits on the card."""
+    return " sc-tag-longer" if len(text) > 260 else " sc-tag-long" if len(text) > 160 else ""
+
+
 def card_html(sponsor, image_url):
     """The sponsor's slide: an uploaded image, or a card made from their website."""
     name = escape(sponsor.get("name", ""))
@@ -242,5 +257,5 @@ def card_html(sponsor, image_url):
     return (f'<div class="sponsor-card" style="background:{colour};color:{_text_colour(colour)}">{logo}'
             + (f'<div class="sc-name{" sc-name-big" if not logo else ""}">{name}</div>'
                if not logo or sponsor.get("show_name", True) else "")
-            + f'<div class="sc-tag">{escape(sponsor.get("tagline", ""))}</div>'
+            + f'<div class="sc-tag{_tag_size(sponsor.get("tagline", ""))}">{escape(sponsor.get("tagline", ""))}</div>'
             f'<div class="sc-web">{escape(sponsor.get("web", ""))}</div></div>')

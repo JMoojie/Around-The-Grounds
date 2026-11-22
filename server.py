@@ -179,7 +179,8 @@ def setup():
     if not settings["pin_hash"] or not _logged_in():
         page = setup_page.login_page(settings, first_time=not settings["pin_hash"], flash=flash)
     else:
-        page = setup_page.setup_page(settings, _token(), session.get("found"), flash, session.get("sponsor_found"))
+        page = setup_page.setup_page(settings, _token(), session.get("found"), flash, session.get("sponsor_found"),
+                                     editing_sponsor=request.args.get("sponsor", ""))
     return _no_store(make_response(page))
 
 
@@ -377,7 +378,7 @@ def setup_sponsor_save_card():
     colour = form.get("colour", "")
     sponsor = {"id": sponsor_id, "kind": "card", "file": "", "web": found["web"],
                "name": form.get("name", "").strip()[:60] or found["name"],
-               "tagline": form.get("tagline", "").strip()[:140],
+               "tagline": sponsor_cards.clip_tagline(form.get("tagline", "")),
                "colour": colour.lower() if COLOUR.match(colour) else "#ffffff",
                "show_name": form.get("show_name") == "1"}
     message = "Sponsor slide added."
@@ -393,6 +394,70 @@ def setup_sponsor_save_card():
     config.save(sponsors=sponsors + [sponsor])
     session.pop("sponsor_found", None)
     return _done(message)
+
+
+def _find_sponsor(sponsors, wanted):
+    for sponsor in sponsors:
+        if SPONSOR_ID.match(wanted) and (sponsor.get("id") or sponsor.get("file", "")).startswith(wanted):
+            return sponsor
+    return None
+
+
+@app.post("/setup/sponsors/edit")
+@_guarded
+def setup_sponsor_edit():
+    sponsors = config.get("sponsors")
+    sponsor = _find_sponsor(sponsors, request.form.get("id", ""))
+    if not sponsor:
+        return _done("Sponsor not found.", "err")
+    form = request.form
+    sponsor["name"] = form.get("name", "").strip()[:60] or sponsor.get("name", "")
+    if sponsor.get("kind") == "card":
+        sponsor["tagline"] = sponsor_cards.clip_tagline(form.get("tagline", ""))
+        if COLOUR.match(form.get("colour", "")):
+            sponsor["colour"] = form["colour"].lower()
+        sponsor["show_name"] = form.get("show_name") == "1"
+    config.save(sponsors=sponsors)
+    return _done(f"{sponsor['name']} saved.")
+
+
+@app.post("/setup/sponsors/reread")
+@_guarded
+def setup_sponsor_reread():
+    """Read the sponsor's website again for its full description."""
+    sponsors = config.get("sponsors")
+    sponsor = _find_sponsor(sponsors, request.form.get("id", ""))
+    if not sponsor or not sponsor.get("web"):
+        return _done("Sponsor not found.", "err")
+    try:
+        found = sponsor_cards.from_website(sponsor["web"])
+    except ValueError as error:
+        return _done(str(error), "err")
+    sponsor["tagline"] = found["tagline"]
+    config.save(sponsors=sponsors)
+    session["flash"] = ("ok", "Read the website again: check the description below, then save.")
+    return redirect(f"/setup?sponsor={sponsor['id']}#sponsors")
+
+
+@app.post("/setup/sponsors/reread-all")
+@_guarded
+def setup_sponsor_reread_all():
+    """Read every website slide's website again for its full description (names, colours and logos stay)."""
+    sponsors = config.get("sponsors")
+    updated, failed = [], []
+    for sponsor in sponsors:
+        if sponsor.get("kind") != "card" or not sponsor.get("web"):
+            continue
+        try:
+            sponsor["tagline"] = sponsor_cards.from_website(sponsor["web"])["tagline"]
+            updated.append(sponsor.get("name", sponsor["web"]))
+        except ValueError:
+            failed.append(sponsor.get("name", sponsor["web"]))
+    config.save(sponsors=sponsors)
+    message = f"Updated {len(updated)} description{'s' if len(updated) != 1 else ''}."
+    if failed:
+        message += f" Couldn't read: {', '.join(failed)} (edit those by hand)."
+    return _done(message, "err" if failed and not updated else "ok")
 
 
 @app.post("/setup/sponsors/remove")

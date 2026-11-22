@@ -490,10 +490,12 @@ table.card-table tr.in td { background: color-mix(in srgb, var(--accent) 12%, tr
 .sponsor-card { width: 1600px; height: 800px; border-radius: 28px; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 26px; padding: 50px 80px; text-align: center;
                 box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); }
-.sc-logo { max-width: 1100px; max-height: 380px; object-fit: contain; }
+.sc-logo { max-width: 1100px; max-height: 420px; object-fit: contain; }
 .sc-name { font-size: 64px; font-weight: 800; }
 .sc-name-big { font-size: 120px; }
-.sc-tag { font-size: 40px; max-width: 1350px; opacity: 0.85; }
+.sc-tag { font-size: 40px; max-width: 1400px; opacity: 0.85; line-height: 1.3; }
+.sc-tag-long { font-size: 34px; }
+.sc-tag-longer { font-size: 29px; }
 .sc-web { font-size: 40px; font-weight: 700; letter-spacing: 1px; opacity: 0.9; }
 /* Noto Sans is installed on the Pi; Segoe UI is the Windows look. */
 body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; }
@@ -590,6 +592,28 @@ SCRIPT = """
       // the scoreboard itself is restarting: try again next time
     }
   };
+  // Sponsors' logos take up about the same space whatever their shape (a wide
+  // logo is shorter, a square one taller), never enlarged past 1.5x their own
+  // size so they stay sharp. SVG logos can grow freely.
+  const LOGO_AREA = 230000, LOGO_MAX_W = 1100, LOGO_MAX_H = 420, LOGO_MAX_ZOOM = 1.5;
+  const sizeLogo = (img) => {
+    const apply = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) return;
+      const ratio = w / h;
+      let width = Math.sqrt(LOGO_AREA * ratio), height = width / ratio;
+      const fit = Math.min(LOGO_MAX_W / width, LOGO_MAX_H / height, 1);
+      width *= fit; height *= fit;
+      if (!/[.]svg([?]|$)/i.test(img.src)) {
+        const sharp = Math.min(1, (w * LOGO_MAX_ZOOM) / width);
+        width *= sharp; height *= sharp;
+      }
+      img.style.width = `${Math.round(width)}px`;
+      img.style.height = `${Math.round(height)}px`;
+    };
+    if (img.complete) apply(); else img.addEventListener("load", apply, { once: true });
+  };
+
   // Every few pages, a sponsor's slide.
   const nextPage = () => {
     if (sponsorBox.classList.contains("on")) return;
@@ -597,6 +621,7 @@ SCRIPT = """
     if (sponsors.length && every > 0 && turns % every === 0) {
       const sponsor = sponsors[sponsorAt % sponsors.length]; sponsorAt += 1;
       sponsorBox.querySelector(".sponsor-body").innerHTML = sponsor.html;
+      sponsorBox.querySelectorAll(".sc-logo").forEach(sizeLogo);
       sponsorBox.classList.add("on");
       fitText(sponsorBox);
       setTimeout(() => { sponsorBox.classList.remove("on"); show(page + 1); }, sponsorSeconds * 1000);

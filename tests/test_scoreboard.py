@@ -332,6 +332,25 @@ class SetupTests(unittest.TestCase):
         self.assertIn("Hot pies on game day", html)
         self.assertIn("westsidebakery.example", html)
 
+        # Edit it later: the whole description, and read the website again.
+        page = self.client.get(f"/setup?sponsor={card['id']}").get_data(as_text=True)
+        self.assertIn("Edit Westside Bakery", page)
+        self.client.post("/setup/sponsors/edit", data={
+            "csrf": self.token(), "id": card["id"], "name": "Westside Bakery & Cafe",
+            "tagline": "Hot pies on game day. Fresh bread every morning, cakes for every celebration.",
+            "colour": "#123456"})
+        card = config.get("sponsors")[1]
+        self.assertEqual((card["name"], card["colour"], card["show_name"]), ("Westside Bakery & Cafe", "#123456", False))
+        self.assertIn("cakes for every celebration", card["tagline"])
+        with mock.patch.object(sponsor_cards, "from_website", return_value=dict(found, tagline="The full story " * 10)):
+            response = self.client.post("/setup/sponsors/reread", data={"csrf": self.token(), "id": card["id"]})
+        self.assertIn(f"sponsor={card['id']}", response.headers["Location"])
+        self.assertTrue(config.get("sponsors")[1]["tagline"].startswith("The full story"))
+        with mock.patch.object(sponsor_cards, "from_website", return_value=dict(found, tagline="Everything, in full.")):
+            self.client.post("/setup/sponsors/reread-all", data={"csrf": self.token()})
+        self.assertEqual(config.get("sponsors")[1]["tagline"], "Everything, in full.")
+        self.assertEqual(config.get("sponsors")[1]["name"], "Westside Bakery & Cafe")  # names kept
+
         for sponsor in config.get("sponsors"):
             self.client.post("/setup/sponsors/remove", data={"csrf": self.token(), "id": sponsor["id"]})
         self.assertEqual(config.get("sponsors"), [])
@@ -430,6 +449,16 @@ class SponsorCardTests(unittest.TestCase):
         for address in ("http://127.0.0.1/", "http://192.168.1.1/", "ftp://example.org/"):
             with self.assertRaises(ValueError):
                 sponsor_cards._check_public(address)
+
+    def test_full_descriptions(self):
+        long = "Fresh bread every morning. " * 12
+        self.assertEqual(sponsor_cards.clip_tagline("  Pies,   cakes and bread.  "), "Pies, cakes and bread.")
+        clipped = sponsor_cards.clip_tagline(long)
+        self.assertLessEqual(len(clipped), sponsor_cards.TAGLINE_LIMIT)
+        self.assertTrue(clipped.endswith("morning."))  # stops at a full sentence
+        html = sponsor_cards.card_html({"kind": "card", "name": "A", "tagline": "x" * 200}, "")
+        self.assertIn('class="sc-tag sc-tag-long"', html)
+        self.assertIn('class="sc-tag"', sponsor_cards.card_html({"kind": "card", "name": "A", "tagline": "Short"}, ""))
 
     def test_text_colour_suits_the_background(self):
         self.assertIn("color:#111111", sponsor_cards.card_html({"kind": "card", "name": "A", "colour": "#ffec0f"}, ""))

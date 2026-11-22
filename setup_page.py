@@ -51,6 +51,11 @@ button.danger { background: #c92a2a; }
 .logo-option { display: flex; align-items: center; gap: 6px; border: 1px solid #e1e4ea; border-radius: 8px;
                padding: 6px 10px; font-weight: 400; margin: 0; background: #f8f9fb; }
 .logo-option img { max-height: 60px; max-width: 160px; object-fit: contain; }
+.logo-size { display: block; font-size: 0.75rem; color: #5b6477; }
+.logo-size.small { color: #a85d00; }
+textarea { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #c8ccd6; border-radius: 8px; font-family: inherit; }
+.secondary-link { background: #e4e7ee; color: #1d2433; }
+.sponsor-edit { border-top: 1px solid #e1e4ea; margin-top: 16px; }
 dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 dt { color: #5b6477; }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -80,7 +85,20 @@ def _shell(body, settings, flash=None):
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up · {_e(settings["title"])}</title><style>{theme_css(settings)}{STYLE}</style></head>
 <body><header>{logo}<div><h1>{_e(settings["title"])}</h1><small>SETUP</small></div></header>
-<main>{note}{body}</main></body></html>"""
+<main>{note}{body}</main>
+<script>
+// Each logo choice shows its size; small ones may look blurry on a big TV.
+document.querySelectorAll(".logo-option img").forEach((img) => {{
+  const label = () => {{
+    const tag = img.parentElement.querySelector(".logo-size");
+    if (!tag || !img.naturalWidth) return;
+    const small = Math.max(img.naturalWidth, img.naturalHeight) < 300;
+    tag.textContent = `${{img.naturalWidth}} x ${{img.naturalHeight}}` + (small ? " · small, may look blurry" : "");
+    tag.classList.toggle("small", small);
+  }};
+  if (img.complete) label(); else img.addEventListener("load", label);
+}});
+</script></body></html>"""
 
 
 def login_page(settings, first_time, flash=None):
@@ -101,7 +119,7 @@ def login_page(settings, first_time, flash=None):
     return _shell(body, settings, flash)
 
 
-def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
+def setup_page(settings, token, found=None, flash=None, sponsor_found=None, editing_sponsor=""):
     parts = []
 
     # ---- Wi-Fi (on the Pi only)
@@ -189,24 +207,49 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
         picture = (f'<img src="/media/sponsors/{_e(s["file"])}" alt="">' if s.get("file")
                    else f'<div class="sc-mini" style="background:{_e(s.get("colour", "#fff"))}">{_e(s.get("name", ""))}</div>')
         kind = "Website slide" if s.get("kind") == "card" else "Image"
+        sponsor_id = s.get("id") or s["file"]
         return (f'<div class="sponsor">{picture}<div>{_e(s.get("name", ""))}</div><div class="note">{kind}</div>'
+                + f'<a class="button secondary-link" href="/setup?sponsor={_e(sponsor_id)}#sponsors">Edit</a> '
                 + _form("/setup/sponsors/remove", f'<input type="hidden" name="id" value="{_e(s.get("id") or s["file"])}">'
                         '<button type="submit" class="secondary">Remove</button>', token, ' class="inline-form"')
                 + "</div>")
 
     tiles = "".join(tile(s) for s in settings["sponsors"]) or '<p class="note">No sponsors yet.</p>'
+    editor = ""
+    chosen = next((s for s in settings["sponsors"] if editing_sponsor and
+                   (s.get("id") or s["file"]) == editing_sponsor), None)
+    if chosen:
+        sponsor_id = chosen.get("id") or chosen["file"]
+        card_fields = ""
+        if chosen.get("kind") == "card":
+            card_fields = f"""
+            <label for="ed-tag">Line underneath (the whole description shows; long ones use smaller text)</label>
+            <textarea id="ed-tag" name="tagline" rows="4" maxlength="{sponsor_cards.TAGLINE_LIMIT}">{_e(chosen.get('tagline', ''))}</textarea>
+            <label>Background colour</label><input name="colour" type="color" value="{_e(chosen.get('colour', '#ffffff'))}">
+            <label class="inline"><input type="checkbox" name="show_name" value="1"{" checked" if chosen.get("show_name", True) else ""}>
+            Show the name under the logo too</label>"""
+        reread = (_form("/setup/sponsors/reread", f'<input type="hidden" name="id" value="{_e(sponsor_id)}">'
+                        f'<button type="submit" class="secondary">Read {_e(chosen.get("web", ""))} again for the full description</button>',
+                        token) if chosen.get("kind") == "card" and chosen.get("web") else "")
+        editor = (f'<div class="sponsor-edit"><h2 style="margin-top:16px">Edit {_e(chosen.get("name", ""))}</h2>'
+                  + _form("/setup/sponsors/edit", f"""<input type="hidden" name="id" value="{_e(sponsor_id)}">
+            <label for="ed-name">Name</label><input id="ed-name" name="name" type="text" maxlength="60" value="{_e(chosen.get('name', ''))}">
+            {card_fields}
+            <button type="submit">Save</button> <a class="button secondary-link" href="/setup#sponsors">Close</a>""", token)
+                  + reread + "</div>")
     confirm = ""
     if sponsor_found:
         options = "".join(
             f'<label class="logo-option"><input type="radio" name="logo" value="{_e(url)}"{" checked" if n == 0 else ""}>'
-            f'<img src="{_e(url)}" alt="" referrerpolicy="no-referrer"></label>'
+            f'<img src="{_e(url)}" alt="" referrerpolicy="no-referrer"><small class="logo-size"></small></label>'
             for n, url in enumerate(sponsor_found["logo_options"]))
         options += '<label class="logo-option"><input type="radio" name="logo" value=""' + (
             "" if sponsor_found["logo_options"] else " checked") + '> No logo (show the name)</label>'
         confirm = _form("/setup/sponsors/save-card", f"""<h2 style="margin-top:16px">Check the slide</h2>
         <p class="note">From {_e(sponsor_found['web'])}. Change anything that isn't right.</p>
         <label for="sc-name">Name</label><input id="sc-name" name="name" type="text" maxlength="60" value="{_e(sponsor_found['name'])}">
-        <label for="sc-tag">Line underneath</label><input id="sc-tag" name="tagline" type="text" maxlength="140" value="{_e(sponsor_found['tagline'])}">
+        <label for="sc-tag">Line underneath (the whole description shows; long ones use smaller text)</label>
+        <textarea id="sc-tag" name="tagline" rows="4" maxlength="{sponsor_cards.TAGLINE_LIMIT}">{_e(sponsor_found['tagline'])}</textarea>
         <label>Background colour</label><input name="colour" type="color" value="{_e(sponsor_found['colour'])}">
         <label>Logo</label><div class="logo-options">{options}</div>
         <label class="inline"><input type="checkbox" name="show_name" value="1"> Show the name under the logo too
@@ -215,7 +258,8 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None):
             "/setup/sponsors/cancel", '<button type="submit" class="secondary">Cancel</button>', token)
     parts.append(f"""<section id="sponsors"><h2>Sponsors</h2>
     <p class="note">A sponsor's slide comes up between pages.</p>
-    <div class="sponsors">{tiles}</div>
+    <div class="sponsors">{tiles}</div>{editor}
+    {_form("/setup/sponsors/reread-all", '<button type="submit" class="secondary">Read every sponsor website again for the full descriptions</button>', token) if any(s.get("kind") == "card" for s in settings["sponsors"]) else ""}
     {_form("/setup/sponsors/find", '''<label for="sponsor-site">Make a slide from the sponsor's website</label>
     <input id="sponsor-site" name="website" type="text" inputmode="url" placeholder="e.g. westsidebakery.com.au" required>
     <button type="submit">Make slide</button>''', token)}{confirm}
