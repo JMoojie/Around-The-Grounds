@@ -109,6 +109,21 @@ log in on the TV screen, and type the same commands.)
 - **Settings › General › Eco Solution / Power**: turn off *Auto Power Off* and anything that dims the picture.
 - Optional: turn on **Anynet+ (HDMI-CEC)** to let the Pi switch the TV on and off by the clock. Edit the times in `/etc/cron.d/around-the-grounds-tv` (`sudo nano /etc/cron.d/around-the-grounds-tv`) and remove the `#` at the start of the two lines.
 
+### The TV remote
+
+With **Anynet+ (HDMI-CEC)** turned on in the Samsung's settings, the TV remote
+controls the scoreboard while the TV is on the Pi's input:
+
+| Button | Does |
+|---|---|
+| Right, Down, Fast forward | Next page |
+| Left, Up, Rewind | Previous page |
+| OK, Play, Pause | Pause (a "Paused" tag shows) / carry on |
+
+A keyboard plugged into the Pi does the same with the arrow keys and Space.
+If the remote doesn't work, check the TV lists a device called "Scoreboard"
+under Anynet+, and look at `journalctl -u around-the-grounds-remote -n 30`.
+
 ### Updates
 
 The Pi checks GitHub every day at 5 am and a few minutes after it starts, and

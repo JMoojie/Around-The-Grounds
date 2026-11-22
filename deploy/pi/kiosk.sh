@@ -2,7 +2,8 @@
 # Started by the kiosk service: waits for the scoreboard, then shows it full
 # screen on the TV (cage is a minimal full-screen window manager).
 PORT="${ATG_PORT:-8080}"
-URL="http://127.0.0.1:${PORT}/"
+BASE="http://127.0.0.1:${PORT}"
+URL="${BASE}/?tv=1"   # tv=1: this screen follows the TV remote
 
 # Say something on the TV while the browser starts (it takes a minute or so
 # on a Pi), so a dark screen doesn't look like a fault.
@@ -13,7 +14,7 @@ if [ -w "$TTY" ]; then
 fi
 
 for _ in $(seq 1 90); do
-    curl -sf "${URL}health" >/dev/null && break
+    curl -sf "${BASE}/health" >/dev/null && break
     sleep 2
 done
 

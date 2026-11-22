@@ -10,8 +10,10 @@
 
 import re
 import secrets
+import threading
 import time
 import uuid
+from collections import deque
 
 import requests
 from flask import Flask, abort, jsonify, make_response, redirect, request, send_from_directory, session
@@ -93,6 +95,40 @@ def _extra_key_ok():
     key = config.get("extra_key")
     supplied = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     return bool(key) and secrets.compare_digest(supplied.encode(), key.encode())
+
+
+# The TV remote: the box's CEC listener (deploy/pi/cec_remote.py) posts each
+# button press here; the screen on the box itself (?tv=1) picks them up.
+REMOTE_ACTIONS = ("next", "previous", "pause")
+_remote = {"last": 0, "pressed": deque(maxlen=20)}
+_remote_lock = threading.Lock()
+
+
+@app.post("/api/remote")
+def api_remote():
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        abort(403)  # only the box itself
+    action = str((request.get_json(silent=True) or {}).get("action") or request.form.get("action") or "")
+    if action not in REMOTE_ACTIONS:
+        return jsonify({"error": f"Unknown action; use one of {', '.join(REMOTE_ACTIONS)}."}), 400
+    with _remote_lock:
+        _remote["last"] += 1
+        _remote["pressed"].append((_remote["last"], action, time.monotonic()))
+    return jsonify({"ok": True})
+
+
+@app.get("/remote")
+def remote_presses():
+    """Presses since ``after`` (from the last 10 seconds only); after=-1 just gives the latest number."""
+    try:
+        after = int(request.args.get("after", "-1"))
+    except ValueError:
+        after = -1
+    with _remote_lock:
+        last = _remote["last"]
+        recent = [action for number, action, when in _remote["pressed"]
+                  if after >= 0 and number > after and time.monotonic() - when < 10]
+    return _no_store(jsonify({"last": last, "actions": recent}))
 
 
 @app.post("/api/pages")

@@ -428,6 +428,44 @@ class ExtraPagesTests(unittest.TestCase):
         self.assertIn(key, self.client.get("/setup").get_data(as_text=True))
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy" / "pi"))
+import cec_remote  # noqa: E402
+
+
+class RemoteTests(unittest.TestCase):
+    def test_tv_remote_buttons(self):
+        monitor = [
+            "Received from TV to Playback Device 1 (0 to 4): USER_CONTROL_PRESSED (0x44):",
+            "	ui-cmd: right (0x04)",
+            "Received from TV to Playback Device 1 (0 to 4): USER_CONTROL_RELEASED (0x45)",
+            "Received from TV to Playback Device 1 (0 to 4): USER_CONTROL_PRESSED (0x44):",
+            "	ui-cmd: select (0x00)",
+            "Received from TV to Playback Device 1 (0 to 4): USER_CONTROL_PRESSED (0x44):",
+            "	ui-cmd: rewind (0x48)",
+            "Received from TV to Playback Device 1 (0 to 4): USER_CONTROL_PRESSED (0x44):",
+            "	ui-cmd: number-5 (0x25)",   # not used
+            "Received from TV to all (0 to 15): STANDBY (0x36)",
+        ]
+        self.assertEqual(list(cec_remote.presses(monitor)), ["next", "pause", "previous"])
+
+    def test_presses_reach_the_box_screen_only(self):
+        client = server.app.test_client()
+        start = client.get("/remote?after=-1").get_json()
+        self.assertEqual(start["actions"], [])
+        self.assertEqual(client.post("/api/remote", json={"action": "next"}).status_code, 200)
+        self.assertEqual(client.post("/api/remote", json={"action": "pause"}).status_code, 200)
+        self.assertEqual(client.post("/api/remote", json={"action": "explode"}).status_code, 400)
+        # Only the box itself may press buttons (not phones on the Wi-Fi).
+        outside = client.post("/api/remote", json={"action": "next"}, environ_base={"REMOTE_ADDR": "192.168.1.50"})
+        self.assertEqual(outside.status_code, 403)
+        pressed = client.get(f"/remote?after={start['last']}").get_json()
+        self.assertEqual(pressed["actions"], ["next", "pause"])
+        self.assertEqual(client.get(f"/remote?after={pressed['last']}").get_json()["actions"], [])
+        page = screen.render_page()
+        self.assertIn('id="paused" hidden', page)
+        self.assertIn("/remote?after=", page)
+
+
 class SponsorCardTests(unittest.TestCase):
     def test_reading_a_sponsors_home_page(self):
         with mock.patch.object(sponsor_cards, "_get", return_value=("https://westside.example/", HOME_PAGE, "text/html")):

@@ -118,6 +118,23 @@ RestartSec=30
 WantedBy=multi-user.target
 EOF
 
+echo "== TV remote (HDMI-CEC: Samsung Anynet+)"
+cat > /etc/systemd/system/around-the-grounds-remote.service <<EOF
+[Unit]
+Description=Around the Grounds TV remote (HDMI-CEC)
+After=around-the-grounds.service
+Wants=around-the-grounds.service
+
+[Service]
+EnvironmentFile=-$APP_DIR/settings.env
+ExecStart=/usr/bin/python3 $APP_DIR/deploy/pi/cec_remote.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 echo "== Automatic updates (daily at 5 am, and shortly after each start)"
 cat > /etc/systemd/system/around-the-grounds-update.service <<EOF
 [Unit]
@@ -155,10 +172,11 @@ fi
 systemctl daemon-reload
 systemctl disable getty@tty1.service >/dev/null 2>&1 || true
 systemctl enable around-the-grounds.service around-the-grounds-kiosk.service around-the-grounds-wifi.service \
-    around-the-grounds-update.timer
+    around-the-grounds-remote.service around-the-grounds-update.timer
 systemctl restart around-the-grounds.service
 systemctl restart around-the-grounds-kiosk.service || true
 systemctl restart around-the-grounds-wifi.service
+systemctl restart around-the-grounds-remote.service || true
 systemctl start around-the-grounds-update.timer
 
 echo

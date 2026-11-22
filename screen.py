@@ -466,6 +466,9 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .live-page.on { display: flex; }
 .live-page > .live-grid { height: 770px; }
 .topbar .club small { letter-spacing: 4px; }
+.paused-tag { margin-left: 18px; padding: 2px 16px; border-radius: 999px; background: var(--accent); color: var(--bg);
+              font-weight: 800; }
+.paused-tag[hidden] { display: none; }
 .extra-grid { display: grid; gap: 36px; height: 770px; }
 .extra-grid.cols-1 { grid-template-columns: 1fr; }
 .extra-grid.cols-2 { grid-template-columns: 1fr 1fr; }
@@ -614,9 +617,20 @@ SCRIPT = """
     if (img.complete) apply(); else img.addEventListener("load", apply, { once: true });
   };
 
-  // Every few pages, a sponsor's slide.
+  // Pages turn by themselves every few seconds, with a sponsor's slide every
+  // few pages. The TV remote (or a keyboard) can move on, go back or pause;
+  // any press restarts the wait.
+  let turnTimer = null, sponsorTimer = null, paused = false;
+  const pausedTag = document.getElementById("paused");
+  const endSponsor = () => {
+    clearTimeout(sponsorTimer);
+    sponsorBox.classList.remove("on");
+  };
+  const schedule = () => {
+    clearTimeout(turnTimer);
+    if (!paused) turnTimer = setTimeout(nextPage, turn * 1000);
+  };
   const nextPage = () => {
-    if (sponsorBox.classList.contains("on")) return;
     turns += 1;
     if (sponsors.length && every > 0 && turns % every === 0) {
       const sponsor = sponsors[sponsorAt % sponsors.length]; sponsorAt += 1;
@@ -624,13 +638,49 @@ SCRIPT = """
       sponsorBox.querySelectorAll(".sc-logo").forEach(sizeLogo);
       sponsorBox.classList.add("on");
       fitText(sponsorBox);
-      setTimeout(() => { sponsorBox.classList.remove("on"); show(page + 1); }, sponsorSeconds * 1000);
+      sponsorTimer = setTimeout(() => { endSponsor(); show(page + 1); schedule(); }, sponsorSeconds * 1000);
       return;
     }
     show(page + 1);
+    schedule();
   };
+  const remote = (action) => {
+    if (action === "pause") {
+      paused = !paused;
+      pausedTag.hidden = !paused;
+    } else {
+      const wasSponsor = sponsorBox.classList.contains("on");
+      endSponsor();
+      // Back from a sponsor's slide returns to the page it interrupted.
+      show(page + (action === "previous" ? (wasSponsor ? 0 : -1) : 1));
+    }
+    schedule();
+  };
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") remote("next");
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") remote("previous");
+    else if (event.key === " " || event.key === "Enter") { remote("pause"); event.preventDefault(); }
+  });
+  // On the box's own screen (?tv=1), presses from the TV remote (HDMI-CEC).
+  if (new URLSearchParams(location.search).has("tv")) {
+    let after = -1;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/remote?after=${after}`, { cache: "no-store" });
+        if (response.ok) {
+          const pressed = await response.json();
+          if (after >= 0) pressed.actions.forEach(remote);
+          after = pressed.last;
+        }
+      } catch (error) {
+        // the scoreboard is restarting: try again shortly
+      }
+      setTimeout(poll, 600);
+    };
+    poll();
+  }
   load(); setInterval(load, refresh * 1000);
-  setInterval(nextPage, turn * 1000);
+  schedule();
 
   const clock = document.getElementById("clock-time"), day = document.getElementById("clock-date");
   const time = () => {
@@ -681,7 +731,7 @@ def render_page():
     <div class="slide-body" id="board">{render_board(None)}</div>
   </article>
   <div class="sponsor" id="sponsor"><p>Proudly supported by</p><div class="sponsor-body"></div></div>
-  <div class="footer"><span>From PlayCricket · checked <span id="checked">&hellip;</span></span>
+  <div class="footer"><span>From PlayCricket · checked <span id="checked">&hellip;</span><span class="paused-tag" id="paused" hidden>Paused</span></span>
   <span class="dots" id="dots"></span></div>
 </div>
 <script>{SCRIPT}</script>
