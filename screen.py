@@ -514,12 +514,63 @@ SCRIPT = """
   const refresh = Number(stage.dataset.refresh) || 60, turn = Number(stage.dataset.page) || 20;
   let page = 0, loaded = false, turns = 0, sponsorAt = 0;
   let sponsors = [], every = 0, sponsorSeconds = 10;
+
+  // Long names and text are never cut off with "...": "(junior)" becomes "(Jr)";
+  // then the text shrinks a little; if it still doesn't fit, people's names become
+  // first initial plus full surname; as a last resort it wraps onto a second line.
+  // Exact text width (whole pixels miss text that's over by a fraction, which
+  // the browser still cuts off).
+  const tooWide = (el) => {
+    if (el.scrollWidth > el.clientWidth) return true;
+    const style = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    const scale = el.offsetWidth ? box.width / el.offsetWidth : 1;  // the stage is scaled to the screen
+    const room = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getBoundingClientRect().width / scale > room + 0.25;
+  };
+  const initials = (text) => text.split(new RegExp("( / |, )")).map((part) => {
+    const words = part.trim().split(" ").filter(Boolean);
+    if (words.length < 2 || /[0-9]/.test(part) || !/^[A-Z]/.test(words[0]) || words[0].replace(".", "").length <= 2) return part;
+    return part.replace(words[0], words[0][0]);
+  }).join("");
+  const eachText = (el, change) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (node) =>
+      node.parentElement.closest(".detail, small, .sub, .pill") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((node) => { node.nodeValue = change(node.nodeValue); });
+  };
+  const shortenNames = (el) => eachText(el, initials);
+  const FIT = "td, .side-name, .ts-name, .tile-team, .tile-line, .tile-note, .game-team, .game-meta, .head-meta, "
+    + ".game-note, .game-venue, .facts, .earlier, .sc-name, .sponsor-name, .reached li";
+  const fitText = (root) => {
+    if (!root) return;
+    root.querySelectorAll(FIT).forEach((el) => {
+      if (el.dataset.fitted || !el.clientWidth || !tooWide(el)) return;
+      el.dataset.fitted = "1";
+      // "(junior)" becomes "(Jr)" first, to leave room for the full name.
+      eachText(el, (text) => text.split("(junior)").join("(Jr)"));
+      if (!tooWide(el)) return;
+      const base = parseFloat(getComputedStyle(el).fontSize);
+      for (let size = base - 1; tooWide(el) && size >= base * 0.75; size -= 1) el.style.fontSize = `${size}px`;
+      if (tooWide(el)) {
+        // Initial + surname, back at full size if that now fits.
+        shortenNames(el);
+        el.style.fontSize = "";
+        for (let size = base - 1; tooWide(el) && size >= base * 0.75; size -= 1) el.style.fontSize = `${size}px`;
+      }
+      if (tooWide(el)) Object.assign(el.style, { whiteSpace: "normal", textOverflow: "clip", lineHeight: "1.15" });
+    });
+  };
   const show = (n) => {
     const pages = Array.from(body.querySelectorAll(".live-page"));
     page = pages.length ? ((n % pages.length) + pages.length) % pages.length : 0;
     pages.forEach((p, i) => p.classList.toggle("on", i === page));
     title.textContent = pages[page] ? pages[page].dataset.title : "";
     dots.innerHTML = pages.length > 1 ? pages.map((_, i) => `<span class="${i === page ? "on" : ""}"></span>`).join("") : "";
+    fitText(pages[page]);
   };
   const load = async () => {
     try {
@@ -547,6 +598,7 @@ SCRIPT = """
       const sponsor = sponsors[sponsorAt % sponsors.length]; sponsorAt += 1;
       sponsorBox.querySelector(".sponsor-body").innerHTML = sponsor.html;
       sponsorBox.classList.add("on");
+      fitText(sponsorBox);
       setTimeout(() => { sponsorBox.classList.remove("on"); show(page + 1); }, sponsorSeconds * 1000);
       return;
     }
