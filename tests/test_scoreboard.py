@@ -24,6 +24,7 @@ import screen  # noqa: E402
 import server  # noqa: E402
 import sponsor_cards  # noqa: E402
 import extra_pages  # noqa: E402
+import qr  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -519,6 +520,21 @@ class SponsorCardTests(unittest.TestCase):
         self.assertNotIn("sc-name", sponsor_cards.card_html(dict(with_logo, show_name=False), "/x.png"))
         self.assertIn("sc-name", sponsor_cards.card_html(dict(with_logo, show_name=True), "/x.png"))
         self.assertEqual(sponsor_cards.image_type(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"), "svg")
+
+
+class QRTests(unittest.TestCase):
+    def test_codes_on_the_setup_screens(self):
+        self.assertEqual(qr.wifi_text("Club;Wi-Fi", 'pa:ss"word'), 'WIFI:T:WPA;S:Club\;Wi-Fi;P:pa\:ss\\"word;;')
+        self.assertIn("<path d=\"M", qr.svg("http://10.42.0.1:8080/setup"))
+        hotspot = screen.render_board({"hotspot": {"ssid": "ATG-Setup", "password": "scoreboard", "address": "10.42.0.1"}})
+        self.assertEqual(hotspot.count('<svg class="qr"'), 2)
+        self.assertIn("1 · Join the Wi-Fi", hotspot)
+        self.assertNotIn("WIFI:", hotspot)  # the code itself, not the text, is on screen
+        new_box = screen.render_board({"mode": "setup", "addresses": ["aroundthegrounds.local", "192.168.20.118"]})
+        self.assertEqual(new_box.count('<svg class="qr"'), 1)
+        with mock.patch.dict(sys.modules, {"qrcode": None}):  # without the QR package: words only
+            self.assertEqual(qr.svg("x"), "")
+            self.assertNotIn("<svg", screen.render_board({"mode": "setup", "addresses": ["192.168.20.118"]}))
 
 
 class DiscoverTests(unittest.TestCase):

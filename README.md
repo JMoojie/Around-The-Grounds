@@ -150,6 +150,9 @@ and clone with `git clone git@github.com:JMoojie/Around-The-Grounds.git around-t
 Phones and laptops on the same Wi-Fi can open the scoreboard too:
 http://aroundthegrounds.local:8080
 
+**QR codes:** the TV's setup screens show codes to scan with a phone's camera:
+one joins the setup Wi-Fi (no typing the password), one opens the setup page.
+
 **Wi-Fi gone?** If the box can't reach a network for about a minute and a half
 after starting, it opens a setup Wi-Fi called `AroundTheGrounds-Setup`
 (password `scoreboard`; both can be changed in `settings.env`) and the TV

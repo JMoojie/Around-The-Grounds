@@ -15,6 +15,14 @@ after="$(as_owner git -C "$APP_DIR" rev-parse HEAD)"
 
 if [ "$before" != "$after" ]; then
     echo "Updated $before -> $after; restarting the scoreboard."
+    # New versions may need extra software (e.g. python3-qrcode for the setup QR codes).
+    for package in python3-qrcode; do
+        if ! dpkg -s "$package" >/dev/null 2>&1; then
+            apt-get install -y --no-install-recommends "$package" >/dev/null 2>&1 \
+                || { apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends "$package" >/dev/null 2>&1; } \
+                || echo "Couldn't install $package (no internet?); the scoreboard works without it."
+        fi
+    done
     chmod +x "$APP_DIR/deploy/pi/"*.sh
     systemctl restart around-the-grounds.service around-the-grounds-kiosk.service
 else

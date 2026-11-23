@@ -8,6 +8,7 @@ Card layouts come from the club archive's TV display.
 from html import escape
 
 import config
+import qr
 import extra_pages
 
 
@@ -234,20 +235,30 @@ def _setup_message(board):
     """What a new (or offline) box shows: how to reach its setup page."""
     hotspot = board.get("hotspot")
     addresses = board.get("addresses") or []
-    steps = []
+    steps, codes = [], []
     if hotspot:
-        steps.append(f"On a phone, join the Wi-Fi network <strong>{_e(hotspot['ssid'])}</strong>"
-                     f" (password <strong>{_e(hotspot['password'])}</strong>)")
-        steps.append(f"Open <strong>http://{_e(hotspot['address'])}:{config.PORT}/setup</strong>")
+        setup_url = f"http://{hotspot['address']}:{config.PORT}/setup"
+        steps.append("Scan code 1 with a phone's camera to join the setup Wi-Fi "
+                     f"(or join <strong>{_e(hotspot['ssid'])}</strong>, password <strong>{_e(hotspot['password'])}</strong>)")
+        steps.append(f"Scan code 2 to open setup (or go to <strong>{_e(setup_url)}</strong>)")
         steps.append("Choose the club's Wi-Fi, then follow the steps")
+        codes = [("1 · Join the Wi-Fi", qr.svg(qr.wifi_text(hotspot["ssid"], hotspot["password"]))),
+                 ("2 · Open setup", qr.svg(setup_url))]
     else:
+        # A number address for the code: some phones can't open .local names.
+        numeric = next((a for a in addresses if a.replace(".", "").isdigit()), addresses[0] if addresses else "")
         where = " or ".join(f"<strong>http://{_e(a)}:{config.PORT}/setup</strong>" for a in addresses[:2])
-        steps.append("On a phone or laptop on the same Wi-Fi as this screen")
-        steps.append(f"Open {where}")
+        steps.append("On a phone on the same Wi-Fi as this screen, scan the code with the camera")
+        steps.append(f"Or open {where}" if where else "Or open this box's address, port 8080, /setup")
         steps.append("Paste the link to your club's PlayCricket page, then follow the steps")
+        if numeric:
+            codes = [("Open setup", qr.svg(f"http://{numeric}:{config.PORT}/setup"))]
     heading = "Connect me to Wi-Fi" if hotspot else "Let's get set up"
-    items = "".join(f"<li>{step}</li>" for step in steps)
-    return f'<div class="setup-screen"><h2>{heading}</h2><ol>{items}</ol></div>'
+    items = "".join(f"<li>{step}</li>" for step in steps).replace("Wi-Fi", "Wi&#8209;Fi")  # never split "Wi-Fi"
+    tiles = "".join(f'<figure class="qr-tile">{code}<figcaption>{_e(label)}</figcaption></figure>'
+                    for label, code in codes if code)
+    return (f'<div class="setup-screen{" with-codes" if tiles else ""}"><div class="setup-steps"><h2>{heading}</h2>'
+            f'<ol>{items}</ol></div>{f"<div class=qr-tiles>{tiles}</div>" if tiles else ""}</div>')
 
 
 def _sent(spread):
@@ -506,6 +517,14 @@ table.card-table tr.in td { background: color-mix(in srgb, var(--accent) 12%, tr
                 padding: 50px 70px; border-left: 12px solid var(--accent); }
 .setup-screen h2 { margin: 0 0 30px; font-size: 64px; color: var(--accent); }
 .setup-screen ol { margin: 0; padding-left: 50px; font-size: 42px; line-height: 1.6; }
+.setup-screen.with-codes { max-width: 1800px; margin-top: 30px; display: flex; gap: 50px; align-items: center; }
+.setup-screen.with-codes .setup-steps { flex: 1; min-width: 0; }
+.setup-screen.with-codes ol { font-size: 34px; line-height: 1.5; }
+.setup-screen.with-codes ol li { margin-bottom: 14px; }
+.qr-tiles { display: flex; gap: 36px; flex-shrink: 0; }
+.qr-tile { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.qr-tile svg { width: 330px; height: 330px; border-radius: 14px; }
+.qr-tile figcaption { font-size: 32px; font-weight: 800; color: var(--accent); }
 .sponsor { position: absolute; inset: 0; background: var(--bg); display: none; flex-direction: column;
            align-items: center; justify-content: center; gap: 30px; z-index: 5; }
 .sponsor.on { display: flex; }
