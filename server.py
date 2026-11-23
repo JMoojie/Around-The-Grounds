@@ -22,6 +22,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import config
 import extra_pages
 import playcricket as pc
+import popups
 import provisioning
 import scores
 import screen
@@ -74,6 +75,7 @@ def board():
             result["addresses"] = system.addresses()
     settings = config.load()
     playing = sum(1 for g in result.get("games") or [] if g["state"] == "live")
+    new_popups = popups.fresh(result.get("events") or []) if settings["show_popups"] else []
     return _no_store(jsonify({
         "html": screen.render_board(result),
         "checked": result.get("checked", ""),
@@ -84,6 +86,7 @@ def board():
                      for s in settings["sponsors"]],
         "sponsor_every": settings["sponsor_every"],
         "sponsor_seconds": settings["sponsor_seconds"],
+        "popups": [{"id": event["id"], "html": screen.popup_html(event)} for event in new_popups],
     }))
 
 
@@ -359,7 +362,7 @@ def _whole(name, low, high, default):
 def setup_pages():
     config.save(page_seconds=_whole("page_seconds", 5, 300, 20),
                 refresh_seconds=_whole("refresh_seconds", 30, 600, 60),
-                **{key: request.form.get(key) == "1" for key in ("show_results", "show_leaders", "show_coming", "live_only")})
+                **{key: request.form.get(key) == "1" for key in ("show_results", "show_leaders", "show_coming", "live_only", "show_popups")})
     return _done("Pages saved.")
 
 

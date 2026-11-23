@@ -279,6 +279,60 @@ def _club_grades():
     return grade_ids, team_ids, names, grade_names
 
 
+BATTING_MILESTONES = (50, 100, 150, 200, 250, 300)
+FIVE_WICKETS = 5
+
+
+def milestones(record, scorecard, club_team_ids, team_names=None):
+    """The club's players' milestones in one game: 50s and 100s, five wickets, hat-tricks.
+
+    Each comes with an id that stays the same for the whole game, so the screen
+    shows it once: "<match>:<player>:<innings>:<what>"."""
+    if not scorecard:
+        return []
+    team_names = team_names or {}
+    full_names = {str(player.get("participantId")): player.get("name") or ""
+                  for team in scorecard.get("teams") or [] for player in team.get("players") or []}
+    sides = {str(team.get("id")): team for team in record.get("teams") or []}
+    ours = [team_id for team_id, team in sides.items() if _is_club(team, club_team_ids)]
+    if not ours:
+        return []
+    our_team = team_label(team_names.get(ours[0]) or sides[ours[0]].get("displayName") or "")
+    other = next((team.get("displayName") or "" for team_id, team in sides.items() if team_id not in ours), "")
+    game = f"{our_team} v {other}" if other else our_team
+    events = []
+    for inning in scorecard.get("innings") or []:
+        number = inning.get("inningsNumber") or inning.get("inningsOrder") or 1
+        batting_ours = str(inning.get("battingTeamId")) in ours
+        if batting_ours:
+            for batter in inning.get("batting") or []:
+                runs = batter.get("runsScored") or 0
+                reached = max((mark for mark in BATTING_MILESTONES if runs >= mark), default=None)
+                if not reached:
+                    continue
+                player = str(batter.get("participantId") or batter.get("playerShortName"))
+                out = str(batter.get("dismissalType") or "").casefold() not in ("not out", "retired not out", "")
+                events.append({
+                    "id": f"{record.get('id')}:{player}:{number}:runs{reached}",
+                    "big": str(reached), "what": "runs",
+                    "name": full_names.get(player) or batter.get("playerShortName") or "",
+                    "detail": f"{runs}{'' if out else '*'} off {batter.get('ballsFaced') or 0} balls", "game": game,
+                })
+        else:
+            for bowler in inning.get("bowling") or []:
+                player = str(bowler.get("participantId") or bowler.get("playerShortName"))
+                name = full_names.get(player) or bowler.get("playerShortName") or ""
+                wickets, conceded = bowler.get("wicketsTaken") or 0, bowler.get("runsConceded") or 0
+                figures = f"{wickets}/{conceded} off {_overs(bowler.get('oversBowled'))} overs"
+                if wickets >= FIVE_WICKETS:
+                    events.append({"id": f"{record.get('id')}:{player}:{number}:wickets5", "big": "5 wickets",
+                                   "what": "", "name": name, "detail": figures, "game": game})
+                if (bowler.get("hatTricks") or 0) > 0:
+                    events.append({"id": f"{record.get('id')}:{player}:{number}:hattrick", "big": "Hat-trick!",
+                                   "what": "", "name": name, "detail": figures, "game": game})
+    return events
+
+
 def _first_day(record):
     starts = sorted(_starts(record))
     return starts[0].date() if starts else None
@@ -331,9 +385,13 @@ def board(today=None):
         if coming:
             coming_until = max(_local(game["start_sort"]).date() for game in coming)
         if todays:
+            games, events = [], []
+            for r, g in todays:
+                scorecard = _with_scorecard(r)
+                games.append(summarise(r, scorecard, team_ids, names, g, today))
+                events += milestones(r, scorecard, team_ids, names)
             return {"mode": "today", "coming": coming, "coming_day": coming_day, "coming_until": coming_until,
-                    "games": _ordered(
-                summarise(r, _with_scorecard(r), team_ids, names, g, today) for r, g in todays)}
+                    "games": _ordered(games), "events": events}
         past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
         results_day = max(past) if past else None
         results = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures

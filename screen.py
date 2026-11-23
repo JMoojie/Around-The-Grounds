@@ -282,6 +282,14 @@ def _sent_pages():
     return _sent(spread=False)
 
 
+def popup_html(event):
+    """The full-screen pop-up for one milestone."""
+    what = f'<span class="popup-what">{_e(event["what"])}</span>' if event.get("what") else ""
+    return (f'<div class="popup-card"><p class="popup-kicker">{_e(_short())} milestone</p>'
+            f'<p class="popup-big">{_e(event["big"])}{what}</p><p class="popup-name">{_e(event["name"])}</p>'
+            f'<p class="popup-detail">{_e(event["detail"])}</p><p class="popup-game">{_e(event["game"])}</p></div>')
+
+
 def notice_live(notice, today):
     """Still to be shown: no end date, or not past it."""
     until = str(notice.get("until") or "")
@@ -526,6 +534,18 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .paused-tag { margin-left: 18px; padding: 2px 16px; border-radius: 999px; background: var(--accent); color: var(--bg);
               font-weight: 800; }
 .paused-tag[hidden] { display: none; }
+.popup { position: absolute; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+         background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 35%, var(--bg)) 0%, var(--bg) 70%); }
+.popup.on { display: flex; animation: popup-in 0.6s ease-out; }
+@keyframes popup-in { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.popup-card { text-align: center; }
+.popup-card p { margin: 0; }
+.popup-kicker { font-size: 40px; letter-spacing: 8px; text-transform: uppercase; color: var(--accent); font-weight: 800; }
+.popup-big { font-size: 230px; font-weight: 900; line-height: 1.05; color: var(--text); }
+.popup-what { font-size: 90px; margin-left: 24px; color: var(--accent); }
+.popup-name { font-size: 110px; font-weight: 800; line-height: 1.1; }
+.popup-detail { font-size: 52px; margin-top: 20px; color: var(--accent); font-weight: 700; }
+.popup-game { font-size: 40px; margin-top: 14px; color: var(--muted); }
 .notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);
                padding: 60px 90px; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
 .notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
@@ -621,7 +641,7 @@ SCRIPT = """
   };
   const shortenNames = (el) => eachText(el, initials);
   const FIT = "td, .side-name, .ts-name, .tile-team, .tile-line, .tile-note, .game-team, .game-meta, .head-meta, "
-    + ".game-note, .game-venue, .facts, .earlier, .sc-name, .sponsor-name, .reached li";
+    + ".game-note, .game-venue, .facts, .earlier, .sc-name, .sponsor-name, .reached li, .popup-name, .popup-game";
   const fitText = (root) => {
     if (!root) return;
     root.querySelectorAll(FIT).forEach((el) => {
@@ -649,6 +669,27 @@ SCRIPT = """
     dots.innerHTML = pages.length > 1 ? pages.map((_, i) => `<span class="${i === page ? "on" : ""}"></span>`).join("") : "";
     fitText(pages[page]);
   };
+  // Milestone pop-ups: each shown once, one at a time, for POPUP_SECONDS.
+  const POPUP_SECONDS = 12;
+  const popupBox = document.getElementById("popup");
+  const popupQueue = [];
+  let popupShown = new Set();
+  try { popupShown = new Set(JSON.parse(sessionStorage.getItem("atg-popups") || "[]")); } catch (error) {}
+  const nextPopup = () => {
+    if (popupBox.classList.contains("on") || !popupQueue.length) return;
+    const popup = popupQueue.shift();
+    popupBox.innerHTML = popup.html;
+    fitText(popupBox);
+    popupBox.classList.add("on");
+    setTimeout(() => { popupBox.classList.remove("on"); nextPopup(); }, POPUP_SECONDS * 1000);
+  };
+  const queuePopup = (popup) => {
+    if (popupShown.has(popup.id)) return;
+    popupShown.add(popup.id);
+    try { sessionStorage.setItem("atg-popups", JSON.stringify([...popupShown].slice(-200))); } catch (error) {}
+    popupQueue.push(popup);
+    nextPopup();
+  };
   const load = async () => {
     try {
       const response = await fetch("/board", { cache: "no-store" });
@@ -657,6 +698,7 @@ SCRIPT = """
       // Settings changed on the setup page: start again with the new look.
       if (board.version && board.version !== stage.dataset.version) { location.reload(); return; }
       sponsors = board.sponsors || []; every = board.sponsor_every || 0; sponsorSeconds = board.sponsor_seconds || 10;
+      (board.popups || []).forEach(queuePopup);
       // PlayCricket unreachable: keep the last scores up and say so.
       if (board.error && loaded) { checked.textContent = `${board.checked} (couldn't reach PlayCricket)`; return; }
       body.innerHTML = board.html;
@@ -802,6 +844,7 @@ def render_page():
     <header class="slide-head"><h1 id="title">{escape(settings["title"])}</h1></header>
     <div class="slide-body" id="board">{render_board(None)}</div>
   </article>
+  <div class="popup" id="popup"></div>
   <div class="sponsor" id="sponsor"><p>Proudly supported by</p><div class="sponsor-body"></div></div>
   <div class="footer"><span>From PlayCricket · checked <span id="checked">&hellip;</span><span class="paused-tag" id="paused" hidden>Paused</span></span>
   <span class="dots" id="dots"></span></div>

@@ -201,6 +201,7 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     {tick("show_results", "Latest results (on days without games)")}
     <label>While games are being played</label>
     {tick("live_only", "Show only the live scores")}
+    {tick("show_popups", "Milestone pop-ups: 50s, 100s, five wickets and hat-tricks")}
     <button type="submit">Save pages</button>''', token)}</section>""")
 
     # ---- Notices

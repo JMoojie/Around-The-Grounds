@@ -27,6 +27,7 @@ import sponsor_cards  # noqa: E402
 import extra_pages  # noqa: E402
 import qr  # noqa: E402
 import provisioning  # noqa: E402
+import popups  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -625,6 +626,62 @@ class NoticeTests(unittest.TestCase):
         first = config.get("notices")[0]["id"]
         self.client.post("/setup/notices/remove", data={"csrf": self.token(), "id": first})
         self.assertEqual(len(config.get("notices")), 1)
+
+
+MILESTONE_CARD = {
+    "status": "LIVE",
+    "teams": [{"id": "r1", "players": [{"participantId": "p1", "name": "Dana Hitter"},
+                                       {"participantId": "p2", "name": "Eli Thrower"}]},
+              {"id": "o1", "players": [{"participantId": "q1", "name": "Visiting Batter"}]}],
+    "innings": [
+        {"inningsNumber": 1, "battingTeamId": "r1", "runsScored": 180, "numberOfWicketsFallen": 4,
+         "batting": [{"participantId": "p1", "playerShortName": "D Hitter", "runsScored": 104, "ballsFaced": 88,
+                      "dismissalType": "Not Out"},
+                     {"participantId": "p2", "playerShortName": "E Thrower", "runsScored": 12, "ballsFaced": 20,
+                      "dismissalType": "Bowled"}],
+         "bowling": [{"participantId": "q1", "playerShortName": "V Batter", "wicketsTaken": 6, "runsConceded": 20,
+                      "oversBowled": 8}]},
+        {"inningsNumber": 2, "battingTeamId": "o1", "runsScored": 60, "numberOfWicketsFallen": 7,
+         "batting": [{"participantId": "q1", "playerShortName": "V Batter", "runsScored": 55, "ballsFaced": 40}],
+         "bowling": [{"participantId": "p2", "playerShortName": "E Thrower", "wicketsTaken": 5, "runsConceded": 18,
+                      "oversBowled": 6.3, "hatTricks": 1}]},
+    ],
+}
+
+
+class PopupTests(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        self.addCleanup(lambda: (config.DATA_DIR / "popups.json").unlink(missing_ok=True))
+
+    def test_our_milestones_only(self):
+        events = scores.milestones(LIVE, MILESTONE_CARD, {"r1"}, {})
+        self.assertEqual([(e["big"], e["name"], e["detail"]) for e in events], [
+            ("100", "Dana Hitter", "104* off 88 balls"),
+            ("5 wickets", "Eli Thrower", "5/18 off 6.3 overs"),
+            ("Hat-trick!", "Eli Thrower", "5/18 off 6.3 overs")])
+        # The other side's 55 and six wickets aren't ours.
+        self.assertEqual(events[0]["game"], "U13 Mixed v Visitors U13")
+        self.assertIn('<p class="popup-big">100<span class="popup-what">runs</span></p>', screen.popup_html(events[0]))
+
+    def test_each_pops_up_once_and_not_when_old(self):
+        events = scores.milestones(LIVE, MILESTONE_CARD, {"r1"}, {})
+        self.assertEqual(len(popups.fresh(events, now=1000)), 3)
+        self.assertEqual(len(popups.fresh(events, now=1000 + 60)), 3)  # still offered: the screen shows each once
+        self.assertEqual(popups.fresh(events, now=1000 + popups.POPUP_MINUTES * 60 + 1), [])
+        # A new milestone later in the day is offered on its own.
+        later = dict(events[0], id="match:p1:1:runs150", big="150")
+        self.assertEqual([e["big"] for e in popups.fresh(events + [later], now=5000)], ["150"])
+
+    def test_board_sends_them(self):
+        client = server.app.test_client()
+        event = scores.milestones(LIVE, MILESTONE_CARD, {"r1"}, {})[0]
+        with mock.patch.object(scores, "live_board", return_value={"mode": "today", "games": [], "events": [event],
+                                                                   "checked": "3:00 pm"}):
+            data = client.get("/board").get_json()
+            self.assertEqual([p["id"] for p in data["popups"]], [event["id"]])
+            config.save(show_popups=False)
+            self.assertEqual(client.get("/board").get_json()["popups"], [])
 
 
 class DiscoverTests(unittest.TestCase):

@@ -48,6 +48,7 @@ DEFAULTS = {
     "show_leaders": True,
     "show_coming": True,
     "live_only": False,               # while games are being played, show only the live scores
+    "show_popups": True,              # milestone pop-ups (50s, 100s, five wickets, hat-tricks)
     "show_extra": True,               # pages sent by another program (see extra_pages.py)
     "extra_key": "",                  # the key that program needs (made on the setup page)
     # Notices: [{"id", "heading", "text", "until": "YYYY-MM-DD" or ""}], each a page in the rotation.
