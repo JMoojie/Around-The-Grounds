@@ -28,6 +28,7 @@ import extra_pages  # noqa: E402
 import qr  # noqa: E402
 import provisioning  # noqa: E402
 import popups  # noqa: E402
+import checkin  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -682,6 +683,33 @@ class PopupTests(unittest.TestCase):
             self.assertEqual([p["id"] for p in data["popups"]], [event["id"]])
             config.save(show_popups=False)
             self.assertEqual(client.get("/board").get_json()["popups"], [])
+
+
+class CheckinTests(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+
+    def test_box_checks_in(self):
+        config.save(short_name="River Rats", club_name="Riverside Cricket Club")
+        name = checkin.box_name()
+        self.assertRegex(name, r"^river-rats-[0-9a-f]{6}$")
+        self.assertEqual(checkin.box_name(), name)  # the same box every time
+        with mock.patch.object(checkin, "URL", ""), mock.patch.object(checkin.requests, "post") as post:
+            self.assertFalse(checkin.check_in())  # no address set: nothing sent
+        post.assert_not_called()
+        with mock.patch.object(checkin, "URL", "https://hc-ping.example/key/{box}?create=1"),              mock.patch.object(checkin.requests, "post", return_value=mock.Mock(status_code=200)) as post:
+            self.assertTrue(checkin.check_in())
+        url = post.call_args[0][0]
+        sent = json.loads(post.call_args[1]["data"])
+        self.assertEqual(url, f"https://hc-ping.example/key/{name}?create=1")
+        self.assertEqual(sent["club"], "Riverside Cricket Club")
+        self.assertEqual(set(sent), {"box", "club", "version", "uptime_hours", "scores"})
+
+    def test_scores_status_reported(self):
+        client = server.app.test_client()
+        with mock.patch.object(scores, "live_board", return_value={"error": "Couldn't reach PlayCricket", "checked": ""}):
+            client.get("/board")
+        self.assertEqual(checkin.last_scores["status"], "error: Couldn't reach PlayCricket")
 
 
 class DiscoverTests(unittest.TestCase):

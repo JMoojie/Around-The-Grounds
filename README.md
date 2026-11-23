@@ -14,6 +14,10 @@ scores straight from PlayCricket. It stores nothing and needs only Wi-Fi.
   wicket takers and catchers across all the club's grades, from PlayCricket's
   season statistics), then the next match day's fixtures.
 
+- **Milestone pop-ups:** when one of the club's players reaches 50 or 100, takes
+  five wickets or a hat-trick during play, the TV shows it full screen.
+- **Notices:** club messages typed on the setup page, each shown as a page in
+  the rotation until its end date.
 - **Any club:** each box is set up from a phone at `/setup`: paste the link
   to the club's PlayCricket page and it finds the club, its team names and logo.
   Then choose colours, heading, logo, which pages to show, and **sponsor

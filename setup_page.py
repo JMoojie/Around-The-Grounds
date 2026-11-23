@@ -2,6 +2,7 @@
 
 from html import escape
 
+import checkin
 import config
 import extra_pages
 import sponsor_cards
@@ -342,6 +343,9 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     <input id="new-again" name="again" type="password" inputmode="numeric" autocomplete="new-password" required>
     <button type="submit" class="secondary">Change PIN</button>''', token)}
     <div>{system_buttons}</div>
+    {('<p class="note">This box checks in with its supplier every ' + str(checkin.MINUTES) + ' minutes, sending only '
+      'the club name, software version, time since it started and whether its scores are working, so problems can '
+      'be spotted early.</p>') if checkin.enabled() else ""}
     <p><a class="button" href="/" target="_blank">View the scoreboard</a>
     {_form("/setup/logout", '<button type="submit" class="secondary">Log out</button>', token, ' class="inline-form"')}</p>
     </section>""")

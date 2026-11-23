@@ -19,6 +19,7 @@ import requests
 from flask import Flask, abort, jsonify, make_response, redirect, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import checkin
 import config
 import extra_pages
 import playcricket as pc
@@ -76,6 +77,8 @@ def board():
     settings = config.load()
     playing = sum(1 for g in result.get("games") or [] if g["state"] == "live")
     new_popups = popups.fresh(result.get("events") or []) if settings["show_popups"] else []
+    checkin.last_scores["status"] = ("setup hotspot on" if hotspot else "not set up" if result.get("mode") == "setup"
+                                     else f"error: {result['error']}" if result.get("error") else "ok")
     return _no_store(jsonify({
         "html": screen.render_board(result),
         "checked": result.get("checked", ""),
@@ -591,6 +594,7 @@ def setup_system():
 
 def main():
     provisioning.start()  # a ready-for-a-club card: become that club
+    checkin.start()       # tell the box's supplier it's alive (if they've set a check-in address)
     try:
         from waitress import serve  # a proper server when it's installed (it is on the Pi)
     except ImportError:

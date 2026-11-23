@@ -29,7 +29,13 @@ runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only --quiet || echo "(cou
 echo "== Club settings, logo, sponsors and PIN"
 systemctl stop around-the-grounds-kiosk.service around-the-grounds.service around-the-grounds-wifi.service || true
 find "$APP_DIR/data" -mindepth 1 -delete 2>/dev/null || true
+CHECKIN="$(grep -E '^ATG_CHECKIN_(URL|MINUTES)=' "$APP_DIR/settings.env" 2>/dev/null || true)"
 cp "$APP_DIR/settings.example.env" "$APP_DIR/settings.env"
+if [ -n "$CHECKIN" ]; then
+    # Keep your box check-in address on every card made from this master.
+    sed -i '/^ATG_CHECKIN_\(URL\|MINUTES\)=/d' "$APP_DIR/settings.env"
+    printf '%s\n' "$CHECKIN" >> "$APP_DIR/settings.env"
+fi
 chown "$APP_USER": "$APP_DIR/settings.env"
 
 rm -f /boot/firmware/aroundthegrounds.json /boot/aroundthegrounds.json

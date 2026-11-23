@@ -33,6 +33,23 @@ Possible pricing models: a one-off price for the box (parts plus your time),
 or a lower box price plus a yearly subscription for updates and support.
 Sponsor slides give clubs a way to cover the cost.
 
+## Knowing your boxes are working (check-in)
+
+Each box can check in every 15 minutes, so you hear about a dead box before the
+club does. With **healthchecks.io** (free for up to 20 boxes):
+
+1. Sign up, open your project's **Settings**, and create a **Ping key**.
+2. On your master Pi, add to `~/around-the-grounds/settings.env`:
+   `ATG_CHECKIN_URL=https://hc-ping.com/<your ping key>/{box}?create=1`
+   then `sudo systemctl restart around-the-grounds`.
+3. Make the master card as usual (`prepare-image.sh` keeps this line).
+
+Each box appears on your healthchecks dashboard on its first check-in, named
+after its club (e.g. `roosters-3f9a1c`), with the club name, software version
+and whether its scores are working in the details. Set each check's period to
+15 minutes (grace an hour or two) and healthchecks emails you when a box goes
+quiet. Clubs see a note on their setup page saying what's sent.
+
 ## Keeping the code private
 
 Boxes update from your GitHub repo. If the repo is public, anyone can copy the
