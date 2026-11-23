@@ -3,13 +3,12 @@
 tools/prepare_club_card.py writes ``aroundthegrounds.json`` onto the card's
 boot partition (the drive Windows can open). On start-up the scoreboard reads
 it once and becomes that club: name, team names, short name, logo and setup
-PIN. Its Wi-Fi details are used by deploy/pi/provision_wifi.py (run as root
-by the Wi-Fi watcher), which then deletes the password from the card.
+PIN. The club still joins its own Wi-Fi by scanning the QR codes on the TV, so
+nobody else needs their Wi-Fi password.
 
     {"club": {"club_id": ..., "club_name": ..., "team_prefix": ..., "short_name": ...,
               "logo_url": ...},
-     "pin_hash": "...", "title": "...",
-     "wifi": {"ssid": ..., "password": ...}}
+     "pin_hash": "...", "title": "..."}
 """
 
 import hashlib
@@ -39,9 +38,8 @@ def find(paths=PATHS):
 
 
 def _fingerprint(data):
-    """Which club settings were applied (Wi-Fi left out: its password is removed after use)."""
-    kept = {key: value for key, value in data.items() if key != "wifi"}
-    return hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest()[:16]
+    """Which card's settings were applied."""
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def apply(data):

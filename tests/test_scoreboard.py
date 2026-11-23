@@ -557,17 +557,17 @@ class ClubCardTests(unittest.TestCase):
         card = Path(self.folder.name) / "bootfs"
         card.mkdir()
         (card / "config.txt").write_text("# the Pi's settings")
-        argv = ["prepare_club_card.py", "--card", str(card), "--club", FOUND["club_id"], "--wifi-name", "Club WiFi",
-                "--wifi-password", "s3cret", "--pin", "482913", "--sheet-folder", self.folder.name]
+        argv = ["prepare_club_card.py", "--card", str(card), "--club", FOUND["club_id"], "--pin", "482913",
+                "--sheet-folder", self.folder.name]
         with mock.patch.object(sys, "argv", argv), mock.patch.object(scores, "discover_club", return_value=FOUND),              mock.patch("builtins.print"):
             prepare_club_card.main()
         written = json.loads((card / "aroundthegrounds.json").read_text())
         self.assertEqual(written["club"]["club_name"], "Riverside Cricket Club")
-        self.assertEqual(written["wifi"], {"ssid": "Club WiFi", "password": "s3cret"})
+        self.assertNotIn("wifi", written)  # the club joins its own Wi-Fi with the QR codes
         self.assertNotIn("482913", json.dumps(written))  # only the PIN's hash goes on the card
         sheet = next(Path(self.folder.name).glob("Around the Grounds welcome - *.html")).read_text(encoding="utf-8")
         self.assertIn("482913", sheet)
-        self.assertIn("Club WiFi", sheet)
+        self.assertIn("Connect me to Wi-Fi", sheet)
 
         # First start-up: the box becomes the club, logo fetched once the internet is there.
         with mock.patch.object(provisioning, "threading"):

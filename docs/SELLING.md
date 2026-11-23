@@ -24,7 +24,7 @@
 |---|---|
 | Raspberry Pi Zero 2 W, power supply, mini-HDMI cable, case, SD card | About $70–90 AUD in parts |
 | Pre-loaded card (see `deploy/image/README.md`) | The club only needs Wi-Fi and a phone |
-| Ready-for-a-club card (`tools/prepare_club_card.py`) | Club, logo, PIN and Wi-Fi set before posting: plug in and go |
+| Ready-for-a-club card (`tools/prepare_club_card.py`) | Club, logo and PIN set before posting: plug in, scan, choose Wi-Fi |
 | Welcome sheet | Printed with the box: getting started, the setup PIN |
 | Setup page | Club, colours, logo, sponsors, timings, Wi-Fi, PIN |
 | Nightly updates from GitHub | Every club gets fixes automatically |

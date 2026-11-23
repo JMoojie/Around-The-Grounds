@@ -4,13 +4,13 @@ Write the master image to the card first (see deploy/image/README.md), then,
 with the card still in the laptop:
 
     python tools/prepare_club_card.py --card E: --club "https://play.cricket.com.au/club/<name>/<id>"
-        [--wifi-name "Club WiFi" --wifi-password "secret"] [--pin 123456] [--title "Around the Grounds"]
+        [--pin 123456] [--title "Around the Grounds"]
 
 E: is the card's small "bootfs" drive. This finds the club on PlayCricket
 (name, team names, logo), writes aroundthegrounds.json onto the card, makes a
 setup PIN (random unless --pin is given), and saves a printable welcome sheet
-to send with the box. On first start-up the box becomes that club, and joins
-the club's Wi-Fi if it was given (the password is then wiped from the card).
+to send with the box. On first start-up the box becomes that club; the club
+joins it to their Wi-Fi by scanning the QR codes on the TV.
 """
 
 import argparse
@@ -35,7 +35,7 @@ def card_folder(card):
     return folder
 
 
-def build(found, pin, wifi_name="", wifi_password="", title=""):
+def build(found, pin, title=""):
     from werkzeug.security import generate_password_hash
 
     data = {
@@ -45,20 +45,17 @@ def build(found, pin, wifi_name="", wifi_password="", title=""):
     }
     if title:
         data["title"] = title
-    if wifi_name:
-        data["wifi"] = {"ssid": wifi_name, "password": wifi_password}
     return data
 
 
-def welcome_sheet(found, pin, wifi_name):
+def welcome_sheet(found, pin):
     """A one-page welcome for the club, to print and send with the box."""
     wifi_steps = (
-        f"<li>Turn on the TV, then plug the box into the TV (HDMI) and into power. It joins "
-        f"<strong>{escape(wifi_name)}</strong> by itself; after about two minutes the scoreboard appears.</li>"
-        if wifi_name else
         "<li>Turn on the TV, then plug the box into the TV (HDMI) and into power. After about two minutes the TV "
-        "shows <strong>Connect me to Wi-Fi</strong>.</li><li>Scan code 1 on the TV with a phone camera, then code 2, "
-        "and choose the club's Wi-Fi.</li>")
+        "shows <strong>Connect me to Wi-Fi</strong>.</li>"
+        "<li>Scan code 1 on the TV with a phone camera (it joins the box's setup Wi-Fi), then scan code 2.</li>"
+        "<li>Enter your setup PIN (below), choose the club's Wi-Fi and type its password. The box is already set "
+        "up for your club, so the scoreboard starts straight away.</li>")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Around the Grounds · {escape(found['club_name'])}</title>
 <style>
@@ -86,8 +83,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--card", required=True, help="the card's bootfs drive, e.g. E:")
     parser.add_argument("--club", required=True, help="link to the club's PlayCricket page (or its ID)")
-    parser.add_argument("--wifi-name", default="")
-    parser.add_argument("--wifi-password", default="")
     parser.add_argument("--pin", default="", help="4 to 8 digits (random if not given)")
     parser.add_argument("--title", default="", help="heading on the TV (default: Around the Grounds)")
     parser.add_argument("--sheet-folder", default=".", help="where to save the welcome sheet")
@@ -106,12 +101,11 @@ def main():
         raise SystemExit(f"Couldn't find the club: {error}")
     print(f"Club:          {found['club_name']} ({found['teams']} teams in {found['season']})")
     print(f"On the TV as:  {found['short_name']}  (teams named '{found['team_prefix']} ...')")
-    print(f"Wi-Fi:         {args.wifi_name or '(none: the club scans the QR codes on the TV)'}")
 
-    data = build(found, pin, args.wifi_name, args.wifi_password, args.title)
+    data = build(found, pin, args.title)
     (folder / FILE_NAME).write_text(json.dumps(data, indent=1), encoding="utf-8")
     sheet = Path(args.sheet_folder) / f"Around the Grounds welcome - {found['club_name']}.html"
-    sheet.write_text(welcome_sheet(found, pin, args.wifi_name), encoding="utf-8")
+    sheet.write_text(welcome_sheet(found, pin), encoding="utf-8")
     print(f"\nCard ready: {folder / FILE_NAME}")
     print(f"Setup PIN:     {pin}")
     print(f"Welcome sheet: {sheet.resolve()}  (print it and send it with the box)")

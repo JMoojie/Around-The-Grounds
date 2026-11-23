@@ -46,20 +46,20 @@ from a phone. No commands, no laptop.
 After writing the card (step 3 above), with the card still in your laptop:
 
 ```
-python tools/prepare_club_card.py --card E: --club "<link to the club's PlayCricket page>" --wifi-name "<their Wi-Fi>" --wifi-password "<password>"
+python tools/prepare_club_card.py --card E: --club "<link to the club's PlayCricket page>"
 ```
 
 (`E:` is the card's **bootfs** drive.) This checks the club on PlayCricket and
 writes its details onto the card, makes a setup PIN, and saves a **welcome
 sheet** to print and send with the box. On first start-up the box becomes that
-club (name, team names, logo, PIN) and joins its Wi-Fi by itself, then wipes the
-Wi-Fi password from the card. The Wi-Fi details are optional: without them, or
-if they're wrong, the TV shows the QR codes for the setup Wi-Fi as usual.
+club (name, team names, logo, PIN). The club then scans the QR codes on the TV
+to join it to their Wi-Fi: nobody else needs their Wi-Fi password.
 
 ## What the club does
 
-With a ready-for-a-club card: plug the box into the TV and power. That's it.
-With a plain card:
+With a ready-for-a-club card: plug the box into the TV and power, scan the two
+QR codes, enter the PIN from the welcome sheet and choose the club's Wi-Fi.
+The scoreboard starts straight away. With a plain card:
 
 
 1. Plug the box into the TV (HDMI) and power. After about two minutes the TV

@@ -60,8 +60,6 @@ case "${1:-watch}" in
     start-hotspot) start_hotspot ;;
     stop-hotspot) stop_hotspot ;;
     watch)
-        # A ready-for-a-club card may carry the club's Wi-Fi details.
-        python3 "$(dirname "$0")/provision_wifi.py" || true
         stop_hotspot
         for _ in $(seq 1 45); do
             online && break
