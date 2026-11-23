@@ -27,6 +27,8 @@ def _live_card(game, with_day=False):
     """A game's card. ``with_day`` adds the day to the start time (for the week ahead)."""
     state = game["state"]
     start = f"{game.get('weekday', '')} {game['start']}".strip() if with_day and game["start"] else game["start"]
+    if game.get("tbc"):
+        start = "Date TBC"
     pill = {"live": '<span class="pill pill-live">LIVE</span>',
             "done": '<span class="pill pill-done">Result</span>',
             "off": '<span class="pill pill-off">Abandoned</span>',
@@ -42,7 +44,8 @@ def _live_card(game, with_day=False):
         for side in game["sides"]
     )
     if state == "upcoming":
-        note = f"Starts {_e(start)} · {'Home' if game['home'] else 'Away'}" if game["start"] else ""
+        note = (f"Starts {_e(start)} · {'Home' if game['home'] else 'Away'}" if game["start"] else
+                "Date and time to be confirmed" if game.get("tbc") else "")
     elif state == "unscored":
         note = f"Started {_e(game['start'])} · result to come"
     else:

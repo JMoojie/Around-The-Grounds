@@ -181,11 +181,16 @@ class ScreenTests(unittest.TestCase):
                        matchSchedule=[])  # PlayCricket fixtures without a date yet
         result = run_board([LAST_WEEK, sunday, NEXT_WEEK, friday, later, undated], today=date(2026, 11, 24))
         # Friday's, Saturday's and Sunday's games, in order; the week after isn't included.
-        self.assertEqual([g["team"] for g in result["coming"]], ["U13", "3rd XI", "U18"])
+        self.assertEqual([g["team"] for g in result["coming"] if not g.get("tbc")], ["U13", "3rd XI", "U18"])
         html = screen.render_board(result)
         self.assertIn('data-title="Coming up · Fri 27 – Sun 29 November"', html)
         self.assertIn("Sat 1:00 pm", html)
         self.assertIn("Starts Fri 6:00 pm", html)
+        # A fixture PlayCricket hasn't dated yet still shows, last, as "Date TBC".
+        tbc = [g for g in result["coming"] if g.get("tbc")]
+        self.assertEqual([g["team"] for g in tbc], ["5th XI"])
+        self.assertIn("Date TBC", html)
+        self.assertIn("Date and time to be confirmed", html)
 
     def test_three_live_games_take_a_page_each(self):
         game = scores.summarise(LIVE, SCORECARD, {"r1"}, {}, "U13", TODAY)

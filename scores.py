@@ -384,6 +384,10 @@ def board(today=None):
                         key=lambda game: (game["start_sort"], game["team"]))
         if coming:
             coming_until = max(_local(game["start_sort"]).date() for game in coming)
+        # Fixtures PlayCricket hasn't given a date yet (still to be played) go last, as "Date TBC".
+        coming += [dict(summarise(r, None, team_ids, names, g, today), tbc=True) for r, g in fixtures
+                   if not _first_day(r) and str(r.get("status") or "").upper() in ("UPCOMING", "PENDING")
+                   and not any(str(t.get("scoreText") or "").strip() for t in r.get("teams") or [])]
         if todays:
             games, events = [], []
             for r, g in todays:
