@@ -592,6 +592,41 @@ class ClubCardTests(unittest.TestCase):
             prepare_club_card.card_folder(self.folder.name)
 
 
+class NoticeTests(unittest.TestCase):
+    def setUp(self):
+        self.client = server.app.test_client()
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+
+    def token(self):
+        return re.search(r'name="csrf" value="([^"]+)"', self.client.get("/setup").get_data(as_text=True)).group(1)
+
+    def test_notices_come_and_go(self):
+        self.client.post("/setup/notices/add", data={"csrf": self.token(), "heading": "Presentation night",
+                                                    "text": "Saturday 14 March, 7pm in the clubrooms.\nAll welcome!",
+                                                    "until": "2026-03-14"})
+        self.client.post("/setup/notices/add", data={"csrf": self.token(), "text": "Training Tuesday 5:30"})
+        self.assertIn("Presentation night", self.client.get("/setup").get_data(as_text=True))
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-03-10T09:00:00+11:00")):
+            pages = screen._notice_pages()
+        self.assertEqual(len(pages), 2)
+        self.assertIn('<h2 class="notice-heading">Presentation night</h2>', pages[0][1])
+        self.assertIn("<p>All welcome!</p>", pages[0][1])
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-03-15T09:00:00+11:00")):
+            self.assertEqual(len(screen._notice_pages()), 1)  # the day after its end date: gone
+            page = self.client.get("/setup").get_data(as_text=True)
+        self.assertIn("finished, no longer shown", page)
+        # Mixed in with the other pages.
+        result = run_board([LAST_WEEK, NEXT_WEEK], today=date(2026, 11, 18))
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-03-10T09:00:00+11:00")):
+            titles = re.findall(r'data-title="([^"]+)"', screen.render_board(result))
+        self.assertEqual(titles.count("Club notice"), 2)
+        self.assertNotEqual(titles[0], "Club notice")
+        first = config.get("notices")[0]["id"]
+        self.client.post("/setup/notices/remove", data={"csrf": self.token(), "id": first})
+        self.assertEqual(len(config.get("notices")), 1)
+
+
 class DiscoverTests(unittest.TestCase):
     def test_club_from_its_playcricket_link(self):
         club = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

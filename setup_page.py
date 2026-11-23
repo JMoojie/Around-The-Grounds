@@ -30,7 +30,7 @@ section { background: #fff; border-radius: 12px; padding: 18px 20px; margin-bott
 h2 { margin: 0 0 12px; font-size: 1.15rem; }
 label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.95rem; }
 label.inline { display: flex; gap: 8px; align-items: center; font-weight: 400; }
-input[type=text], input[type=password], input[type=number], input[type=url], select {
+input[type=text], input[type=password], input[type=number], input[type=url], input[type=date], select {
     width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #c8ccd6; border-radius: 8px; }
 input[type=color] { width: 64px; height: 40px; border: none; padding: 0; background: none; }
 .colours { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
@@ -55,6 +55,7 @@ button.danger { background: #c92a2a; }
 .logo-size.small { color: #a85d00; }
 textarea { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #c8ccd6; border-radius: 8px; font-family: inherit; }
 .secondary-link { background: #e4e7ee; color: #1d2433; }
+.notice-tile { text-align: left; }
 .sponsor-edit { border-top: 1px solid #e1e4ea; margin-top: 16px; }
 dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 dt { color: #5b6477; }
@@ -201,6 +202,34 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     <label>While games are being played</label>
     {tick("live_only", "Show only the live scores")}
     <button type="submit">Save pages</button>''', token)}</section>""")
+
+    # ---- Notices
+    import scores
+    from screen import notice_live
+
+    today = scores._now().date()
+    notice_rows = "".join(
+        f'<div class="sponsor notice-tile"><strong>{_e(n.get("heading") or "Notice")}</strong>'
+        f'<div>{_e(n["text"][:120])}{"…" if len(n["text"]) > 120 else ""}</div>'
+        f'<div class="note">{("Until " + _e(n["until"])) if n.get("until") else "No end date"}'
+        f'{"" if notice_live(n, today) else " · finished, no longer shown"}</div>'
+        + _form("/setup/notices/remove", f'<input type="hidden" name="id" value="{_e(n["id"])}">'
+                '<button type="submit" class="secondary">Remove</button>', token, ' class="inline-form"')
+        + "</div>"
+        for n in settings["notices"]
+    ) or '<p class="note">No notices yet.</p>'
+    parts.append(f"""<section id="notices"><h2>Notices</h2>
+    <p class="note">Messages for the clubrooms, e.g. "Presentation night Saturday 14 March, 7pm". Each one gets
+    its own page, mixed in through the rotation. Give it an end date and it disappears by itself.</p>
+    <div class="sponsors">{notice_rows}</div>
+    {_form("/setup/notices/add", f'''<label for="notice-heading">Heading (optional)</label>
+    <input id="notice-heading" name="heading" type="text" maxlength="60" placeholder="Presentation night">
+    <label for="notice-text">Message</label>
+    <textarea id="notice-text" name="text" rows="3" maxlength="400" required></textarea>
+    <label for="notice-until">Show until (optional)</label>
+    <input id="notice-until" name="until" type="date" min="{today.isoformat()}">
+    <button type="submit">Add notice</button>''', token)}
+    </section>""")
 
     # ---- Sponsors
     def tile(s):

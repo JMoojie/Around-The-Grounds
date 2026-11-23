@@ -363,6 +363,34 @@ def setup_pages():
     return _done("Pages saved.")
 
 
+MAX_NOTICES = 12
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.post("/setup/notices/add")
+@_guarded
+def setup_notice_add():
+    notices = config.get("notices")
+    if len(notices) >= MAX_NOTICES:
+        return _done(f"There's room for {MAX_NOTICES} notices; remove one first.", "err")
+    text = request.form.get("text", "").strip()[:400]
+    if not text:
+        return _done("Type the notice first.", "err")
+    until = request.form.get("until", "").strip()
+    notices.append({"id": uuid.uuid4().hex, "heading": request.form.get("heading", "").strip()[:60],
+                    "text": text, "until": until if DATE.match(until) else ""})
+    config.save(notices=notices)
+    return _done("Notice added. It shows on the TV within a minute.")
+
+
+@app.post("/setup/notices/remove")
+@_guarded
+def setup_notice_remove():
+    wanted = request.form.get("id", "")
+    config.save(notices=[n for n in config.get("notices") if n.get("id") != wanted])
+    return _done("Notice removed.")
+
+
 @app.post("/setup/sponsors/add")
 @_guarded
 def setup_sponsor_add():

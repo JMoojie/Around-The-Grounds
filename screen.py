@@ -282,6 +282,29 @@ def _sent_pages():
     return _sent(spread=False)
 
 
+def notice_live(notice, today):
+    """Still to be shown: no end date, or not past it."""
+    until = str(notice.get("until") or "")
+    return not until or until >= today.isoformat()
+
+
+def _notice_pages():
+    """A page for each of the club's notices (spread through the rotation)."""
+    import scores  # the club's own date (Melbourne time by default)
+
+    today = scores._now().date()
+    pages = []
+    for notice in config.get("notices"):
+        if not notice_live(notice, today):
+            continue
+        text = str(notice.get("text") or "")
+        size = " notice-long" if len(text) > 220 else " notice-medium" if len(text) > 110 else ""
+        heading = f'<h2 class="notice-heading">{_e(notice["heading"])}</h2>' if notice.get("heading") else ""
+        paragraphs = "".join(f"<p>{_e(line)}</p>" for line in text.splitlines() if line.strip())
+        pages.append(("Club notice", f'<div class="notice-card">{heading}<div class="notice-text{size}">{paragraphs}</div></div>'))
+    return pages
+
+
 def _spread(pages, extras):
     """``extras`` spaced out evenly between ``pages`` (never before the first)."""
     if not pages:
@@ -332,13 +355,13 @@ def render_board(board):
             strip = f'<div class="strip">{"".join(_tile(g) for g in others)}</div>' if others else ""
             pages.append(("Live scores", f'<div class="focus focus-{len(group)}">{cards}</div>{strip}'))
         if not config.get("live_only"):
-            pages = _spread(pages + _extra_pages(board), _sent(spread=True))
+            pages = _spread(pages + _extra_pages(board), _sent(spread=True) + _notice_pages())
     elif board["mode"] == "today":
-        pages = _spread(_grid_pages("Today\'s games", board["games"]) + _extra_pages(board), _sent(spread=True))
+        pages = _spread(_grid_pages("Today\'s games", board["games"]) + _extra_pages(board), _sent(spread=True) + _notice_pages())
     else:
         if board.get("results") and config.get("show_results"):
             pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
-        pages = _spread(pages + _extra_pages(board), _sent(spread=True))
+        pages = _spread(pages + _extra_pages(board), _sent(spread=True) + _notice_pages())
         if not pages:
             pages = [(config.get("title"), _message("No games scheduled."))]
     return "".join(_page(title, inner, n == 0) for n, (title, inner) in enumerate(pages))
@@ -503,6 +526,13 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .paused-tag { margin-left: 18px; padding: 2px 16px; border-radius: 999px; background: var(--accent); color: var(--bg);
               font-weight: 800; }
 .paused-tag[hidden] { display: none; }
+.notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);
+               padding: 60px 90px; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
+.notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
+.notice-text { font-size: 56px; line-height: 1.35; }
+.notice-text p { margin: 0 0 18px; }
+.notice-medium { font-size: 46px; }
+.notice-long { font-size: 38px; }
 .extra-grid { display: grid; gap: 36px; height: 770px; }
 .extra-grid.cols-1 { grid-template-columns: 1fr; }
 .extra-grid.cols-2 { grid-template-columns: 1fr 1fr; }
