@@ -32,6 +32,8 @@ find "$APP_DIR/data" -mindepth 1 -delete 2>/dev/null || true
 cp "$APP_DIR/settings.example.env" "$APP_DIR/settings.env"
 chown "$APP_USER": "$APP_DIR/settings.env"
 
+rm -f /boot/firmware/aroundthegrounds.json /boot/aroundthegrounds.json
+
 echo "== Saved Wi-Fi networks"
 nmcli -t -f NAME,TYPE connection show | awk -F: '$2 == "802-11-wireless" {print $1}' | while read -r name; do
     nmcli connection delete "$name" >/dev/null || true

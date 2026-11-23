@@ -56,6 +56,9 @@ DEFAULTS = {
     "sponsor_seconds": 10,
     # Setup page.
     "pin_hash": "",
+    # Ready-for-a-club cards (provisioning.py).
+    "provisioned": "",
+    "logo_pending": "",
 }
 
 _lock = threading.Lock()

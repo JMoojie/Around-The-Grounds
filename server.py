@@ -22,6 +22,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import config
 import extra_pages
 import playcricket as pc
+import provisioning
 import scores
 import screen
 import setup_page
@@ -558,6 +559,7 @@ def setup_system():
 
 
 def main():
+    provisioning.start()  # a ready-for-a-club card: become that club
     try:
         from waitress import serve  # a proper server when it's installed (it is on the Pi)
     except ImportError:

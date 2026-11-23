@@ -1,5 +1,6 @@
 """Tests with made-up teams and players (no real names in this repo)."""
 
+import json
 import os
 import re
 import sys
@@ -25,6 +26,7 @@ import server  # noqa: E402
 import sponsor_cards  # noqa: E402
 import extra_pages  # noqa: E402
 import qr  # noqa: E402
+import provisioning  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -535,6 +537,59 @@ class QRTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"qrcode": None}):  # without the QR package: words only
             self.assertEqual(qr.svg("x"), "")
             self.assertNotIn("<svg", screen.render_board({"mode": "setup", "addresses": ["192.168.20.118"]}))
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import prepare_club_card  # noqa: E402
+
+FOUND = {"club_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "club_name": "Riverside Cricket Club",
+         "team_prefix": "Riverside", "short_name": "Rivers", "logo_url": "https://example.org/logo.png",
+         "season": "Summer 2026/27", "teams": 9}
+
+
+class ClubCardTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+
+    def test_preparing_a_card_and_the_box_becoming_the_club(self):
+        card = Path(self.folder.name) / "bootfs"
+        card.mkdir()
+        (card / "config.txt").write_text("# the Pi's settings")
+        argv = ["prepare_club_card.py", "--card", str(card), "--club", FOUND["club_id"], "--wifi-name", "Club WiFi",
+                "--wifi-password", "s3cret", "--pin", "482913", "--sheet-folder", self.folder.name]
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(scores, "discover_club", return_value=FOUND),              mock.patch("builtins.print"):
+            prepare_club_card.main()
+        written = json.loads((card / "aroundthegrounds.json").read_text())
+        self.assertEqual(written["club"]["club_name"], "Riverside Cricket Club")
+        self.assertEqual(written["wifi"], {"ssid": "Club WiFi", "password": "s3cret"})
+        self.assertNotIn("482913", json.dumps(written))  # only the PIN's hash goes on the card
+        sheet = next(Path(self.folder.name).glob("Around the Grounds welcome - *.html")).read_text(encoding="utf-8")
+        self.assertIn("482913", sheet)
+        self.assertIn("Club WiFi", sheet)
+
+        # First start-up: the box becomes the club, logo fetched once the internet is there.
+        with mock.patch.object(provisioning, "threading"):
+            provisioning.start(paths=[card / "aroundthegrounds.json"])
+        self.assertEqual((config.get("club_id"), config.get("short_name")), (FOUND["club_id"], "Rivers"))
+        self.assertEqual(config.get("logo_pending"), FOUND["logo_url"])
+        from werkzeug.security import check_password_hash
+        self.assertTrue(check_password_hash(config.get("pin_hash"), "482913"))
+        with mock.patch.object(provisioning.requests, "get", side_effect=provisioning.requests.ConnectionError):
+            self.assertFalse(provisioning.fetch_pending_logo())  # no internet yet: try again later
+        response = mock.Mock(content=PNG, raise_for_status=lambda: None)
+        with mock.patch.object(provisioning.requests, "get", return_value=response):
+            self.assertTrue(provisioning.fetch_pending_logo())
+        self.assertEqual((config.DATA_DIR / config.get("logo")).read_bytes(), PNG)
+        # Changes made later on the setup page aren't undone by the next start-up.
+        config.save(short_name="River Rats")
+        self.assertFalse(provisioning.apply(provisioning.find([card / "aroundthegrounds.json"])))
+        self.assertEqual(config.get("short_name"), "River Rats")
+
+    def test_not_a_card(self):
+        with self.assertRaises(SystemExit):
+            prepare_club_card.card_folder(self.folder.name)
 
 
 class DiscoverTests(unittest.TestCase):
