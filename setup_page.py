@@ -236,7 +236,8 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     <label for="notice-picture">Picture or PDF of a poster (optional)</label>
     <input id="notice-picture" name="picture" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
     <p class="note">A poster on its own fills the page; add a heading or message to show them beside it.
-    PDFs show their first page. Up to 12 MB.</p>
+    PDFs show their first page. Up to 12 MB. A web address in the message (e.g. www.yourclub.com.au/tickets)
+    gets a QR code, so people can open it on their phones.</p>
     <label for="notice-until">Show until (optional)</label>
     <input id="notice-until" name="until" type="date" min="{today.isoformat()}">
     <button type="submit">Add notice</button>''', token, ' enctype="multipart/form-data"')}

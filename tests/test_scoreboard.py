@@ -778,6 +778,21 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(config.DEFAULTS["notices"], [])
 
 
+class NoticeLinkTests(unittest.TestCase):
+    def test_web_addresses_get_a_qr_code(self):
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        self.assertEqual(screen.notice_link("Tickets at https://club.example/tickets."), "https://club.example/tickets")
+        self.assertEqual(screen.notice_link("Book: www.club.example/trivia!"), "https://www.club.example/trivia")
+        self.assertEqual(screen.notice_link("Training Tuesday 5:30"), "")
+        config.save(notices=[{"id": "a", "heading": "Trivia", "text": "Book at www.club.example/trivia", "until": ""},
+                             {"id": "b", "heading": "", "text": "Training Tuesday", "until": ""}])
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-11-24T09:00:00+11:00")):
+            pages = screen._notice_pages()
+        self.assertIn('class="notice-card with-qr"', pages[0][1])
+        self.assertIn("Scan for more", pages[0][1])
+        self.assertNotIn("Scan for more", pages[1][1])
+
+
 class PosterNoticeTests(unittest.TestCase):
     def setUp(self):
         self.client = server.app.test_client()

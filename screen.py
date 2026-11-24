@@ -5,6 +5,7 @@ REFRESH_SECONDS and turns pages every PAGE_SECONDS when there's more than one.
 Card layouts come from the club archive's TV display.
 """
 
+import re
 from html import escape
 
 import config
@@ -331,6 +332,18 @@ def notice_live(notice, today):
     return not until or until >= today.isoformat()
 
 
+LINK = re.compile(r"(https?://[^\s<>\"]+|www\.[^\s<>\"]+)", re.I)
+
+
+def notice_link(text):
+    """The first web address in a notice, ready to open (https:// added if it starts with www.)."""
+    match = LINK.search(str(text or ""))
+    if not match:
+        return ""
+    link = match.group(1).rstrip(".,;:!?)]'")
+    return link if link.lower().startswith("http") else "https://" + link
+
+
 def _notice_pages():
     """A page for each of the club's notices (spread through the rotation)."""
     import scores  # the club's own date (Melbourne time by default)
@@ -345,12 +358,18 @@ def _notice_pages():
         heading = f'<h2 class="notice-heading">{_e(notice["heading"])}</h2>' if notice.get("heading") else ""
         paragraphs = "".join(f"<p>{_e(line)}</p>" for line in text.splitlines() if line.strip())
         words = f'{heading}<div class="notice-text{size}">{paragraphs}</div>' if heading or paragraphs else ""
+        # A web address in the message: a code to scan for more on a phone.
+        link = notice_link(text)
+        code = qr.svg(link) if link else ""
+        scan = (f'<figure class="notice-qr">{code}<figcaption>Scan for more</figcaption></figure>' if code else "")
         picture = notice.get("picture")
         if picture:
             poster = f'<img class="notice-poster" src="/media/notices/{_e(picture)}" alt="">'
             # A poster on its own fills the page; with words, it sits beside them.
-            inner = (f'<div class="notice-card with-poster">{poster}<div class="notice-words">{words}</div></div>'
+            inner = (f'<div class="notice-card with-poster">{poster}<div class="notice-words">{words}{scan}</div></div>'
                      if words else f'<div class="notice-poster-only">{poster}</div>')
+        elif scan:
+            inner = f'<div class="notice-card with-qr"><div class="notice-words">{words}</div>{scan}</div>'
         else:
             inner = f'<div class="notice-card">{words}</div>'
         pages.append(("Club notice", inner))
@@ -604,6 +623,12 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .notice-poster-only { height: 770px; display: flex; align-items: center; justify-content: center; }
 .notice-poster-only .notice-poster { max-width: 100%; max-height: 770px; object-fit: contain; border-radius: 12px;
                                      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4); }
+.notice-card.with-qr { flex-direction: row; align-items: center; gap: 70px; }
+.notice-qr { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; flex-shrink: 0; }
+.notice-qr svg { width: 300px; height: 300px; border-radius: 12px; }
+.with-poster .notice-qr { align-items: flex-start; }
+.with-poster .notice-qr svg { width: 220px; height: 220px; }
+.notice-qr figcaption { font-size: 30px; font-weight: 800; color: var(--accent); }
 .notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
 .notice-text { font-size: 56px; line-height: 1.35; }
 .notice-text p { margin: 0 0 18px; }
