@@ -176,6 +176,9 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     parts.append(f"""<section><h2>Look</h2>
     {_form("/setup/look", f'''<label for="title">Heading</label>
     <input id="title" name="title" type="text" value="{_e(settings['title'])}" maxlength="40">
+    <label for="title-note">Small note beside the heading (optional)</label>
+    <input id="title-note" name="title_note" type="text" value="{_e(settings['title_note'])}" maxlength="60"
+     placeholder="* Work in progress, not all stats accurate">
     <label>Colours</label><div class="colours">{colours}</div>
     <label for="preset">Or a ready-made set</label>
     <select id="preset" name="preset"><option value="">(keep the colours above)</option>{presets}</select>

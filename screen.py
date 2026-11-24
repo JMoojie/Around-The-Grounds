@@ -585,6 +585,8 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .game-top strong { color: var(--accent); }
 .cols3 .game-top { font-size: 23px; }
 .rows3 .game-top { font-size: 20px; }
+.title-note { margin-left: 22px; font-size: 20px; font-weight: 400; letter-spacing: 0; color: var(--muted);
+              font-style: italic; vertical-align: middle; }
 .notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);
                padding: 60px 90px; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
 .notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
@@ -868,6 +870,7 @@ def render_page():
     logo = (f'<img class="logo" src="/media/logo?v={escape(config.version())}" alt="">'
             if settings.get("logo") else "")
     club = settings.get("club_name") or "Set up needed"
+    note = f'<span class="title-note">{escape(settings["title_note"])}</span>' if settings.get("title_note") else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -877,7 +880,7 @@ def render_page():
 <div id="stage" data-refresh="{settings["refresh_seconds"]}" data-page="{settings["page_seconds"]}"
      data-version="{escape(config.version())}">
   <div class="topbar">
-    <div class="brand">{logo}<div class="club">{escape(settings["title"].upper())}<small>{escape(club.upper())}</small></div></div>
+    <div class="brand">{logo}<div class="club">{escape(settings["title"].upper())}{note}<small>{escape(club.upper())}</small></div></div>
     <div class="clock"><span id="clock-time"></span><small id="clock-date"></small></div>
   </div>
   <article class="slide active" data-screen="live">

@@ -36,6 +36,7 @@ DEFAULTS = {
     "timezone": os.environ.get("ATG_TIMEZONE", "Australia/Melbourne"),
     # Look.
     "title": os.environ.get("ATG_TITLE", "Around the Grounds"),
+    "title_note": "",                 # small text beside the heading, e.g. "* Work in progress"
     "accent": "#f2b632",
     "background": "#0b1424",
     "panel": "#13213a",

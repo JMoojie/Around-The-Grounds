@@ -318,7 +318,8 @@ def setup_club_save():
 @_guarded
 def setup_look():
     form = request.form
-    changes = {"title": form.get("title", "").strip()[:40] or config.DEFAULTS["title"]}
+    changes = {"title": form.get("title", "").strip()[:40] or config.DEFAULTS["title"],
+               "title_note": form.get("title_note", "").strip()[:60]}
     preset = setup_page.PRESETS.get(form.get("preset", ""))
     if preset:
         changes.update(zip(("background", "panel", "accent", "text"), preset))

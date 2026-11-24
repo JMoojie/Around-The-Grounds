@@ -351,10 +351,12 @@ class SetupTests(unittest.TestCase):
                                                    "team_prefix": "Riverside"})
         self.assertEqual((config.get("club_id"), config.get("short_name")), (found["club_id"], "Rivers"))
 
-        self.client.post("/setup/look", data={"csrf": self.token(), "title": "Game Day", "preset": "Black and red"})
+        self.client.post("/setup/look", data={"csrf": self.token(), "title": "Game Day", "preset": "Black and red",
+                                              "title_note": "* Work in progress, not all stats accurate"})
         self.assertEqual((config.get("title"), config.get("accent")), ("Game Day", "#e03131"))
         page = self.client.get("/").get_data(as_text=True)
         self.assertIn("GAME DAY", page)
+        self.assertIn('<span class="title-note">* Work in progress, not all stats accurate</span>', page)
         self.assertIn("--accent: #e03131", page)
 
         from io import BytesIO
