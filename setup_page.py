@@ -121,7 +121,7 @@ def login_page(settings, first_time, flash=None):
     return _shell(body, settings, flash)
 
 
-def setup_page(settings, token, found=None, flash=None, sponsor_found=None, editing_sponsor=""):
+def setup_page(settings, token, found=None, flash=None, sponsor_found=None, editing_sponsor="", editing_notice=""):
     parts = []
 
     # ---- Wi-Fi (on the Pi only)
@@ -220,24 +220,54 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
         f'<div>{_e(n["text"][:120])}{"…" if len(n["text"]) > 120 else ""}</div>'
         f'<div class="note">{("Until " + _e(n["until"])) if n.get("until") else "No end date"}'
         f'{"" if notice_live(n, today) else " · finished, no longer shown"}</div>'
+        + f'<a class="button secondary-link" href="/setup?notice={_e(n["id"])}#notices">Edit</a> '
         + _form("/setup/notices/remove", f'<input type="hidden" name="id" value="{_e(n["id"])}">'
                 '<button type="submit" class="secondary">Remove</button>', token, ' class="inline-form"')
         + "</div>"
         for n in settings["notices"]
     ) or '<p class="note">No notices yet.</p>'
+
+    def link_choice(current="qr"):
+        options = (("qr", "As a QR code under the message (the address isn't printed)"),
+                   ("text", "As the web address, written out"), ("both", "Both"))
+        return ('<label for="notice-link">If the message has a web address, show it</label><select id="notice-link" name="link">'
+                + "".join(f'<option value="{key}"{" selected" if key == current else ""}>{label}</option>'
+                          for key, label in options) + "</select>")
+
+    editor = ""
+    chosen = next((n for n in settings["notices"] if editing_notice and n.get("id") == editing_notice), None)
+    if chosen:
+        current_poster = (f'<p><img src="/media/notices/{_e(chosen["picture"])}" alt="" style="max-height:120px"></p>'
+                          '<label class="inline"><input type="checkbox" name="remove_picture" value="1"> Remove this poster</label>'
+                          if chosen.get("picture") else "")
+        editor = (f'<div class="sponsor-edit"><h2 style="margin-top:16px">Edit notice</h2>'
+                  + _form("/setup/notices/edit", f"""<input type="hidden" name="id" value="{_e(chosen['id'])}">
+            <label for="en-heading">Heading (optional)</label>
+            <input id="en-heading" name="heading" type="text" maxlength="60" value="{_e(chosen.get('heading', ''))}">
+            <label for="en-text">Message</label>
+            <textarea id="en-text" name="text" rows="4" maxlength="400">{_e(chosen.get('text', ''))}</textarea>
+            {link_choice(chosen.get('link') or 'qr')}
+            {current_poster}
+            <label for="en-picture">{"Replace the poster" if chosen.get("picture") else "Add a poster"} (picture or PDF, optional)</label>
+            <input id="en-picture" name="picture" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+            <label for="en-until">Show until (optional)</label>
+            <input id="en-until" name="until" type="date" value="{_e(chosen.get('until', ''))}">
+            <button type="submit">Save notice</button> <a class="button secondary-link" href="/setup#notices">Close</a>""",
+                          token, ' enctype="multipart/form-data"') + "</div>")
     parts.append(f"""<section id="notices"><h2>Notices</h2>
     <p class="note">Messages for the clubrooms, e.g. "Presentation night Saturday 14 March, 7pm". Each one gets
     its own page, mixed in through the rotation. Give it an end date and it disappears by itself.</p>
-    <div class="sponsors">{notice_rows}</div>
+    <div class="sponsors">{notice_rows}</div>{editor}
     {_form("/setup/notices/add", f'''<label for="notice-heading">Heading (optional)</label>
     <input id="notice-heading" name="heading" type="text" maxlength="60" placeholder="Presentation night">
     <label for="notice-text">Message</label>
     <textarea id="notice-text" name="text" rows="3" maxlength="400"></textarea>
+    {link_choice()}
     <label for="notice-picture">Picture or PDF of a poster (optional)</label>
     <input id="notice-picture" name="picture" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
     <p class="note">A poster on its own fills the page; add a heading or message to show them beside it.
     PDFs show their first page. Up to 12 MB. A web address in the message (e.g. www.yourclub.com.au/tickets)
-    gets a QR code, so people can open it on their phones.</p>
+    can show as a QR code, so people can open it on their phones.</p>
     <label for="notice-until">Show until (optional)</label>
     <input id="notice-until" name="until" type="date" min="{today.isoformat()}">
     <button type="submit">Add notice</button>''', token, ' enctype="multipart/form-data"')}

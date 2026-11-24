@@ -231,7 +231,8 @@ def setup():
         page = setup_page.login_page(settings, first_time=not settings["pin_hash"], flash=flash)
     else:
         page = setup_page.setup_page(settings, _token(), session.get("found"), flash, session.get("sponsor_found"),
-                                     editing_sponsor=request.args.get("sponsor", ""))
+                                     editing_sponsor=request.args.get("sponsor", ""),
+                                     editing_notice=request.args.get("notice", ""))
     return _no_store(make_response(page))
 
 
@@ -399,11 +400,47 @@ def setup_notice_add():
             picture = notice_images.save(data)
         except ValueError as error:
             return _done(str(error), "err")
-    until = request.form.get("until", "").strip()
-    notices.append({"id": uuid.uuid4().hex, "heading": request.form.get("heading", "").strip()[:60],
-                    "text": text, "until": until if DATE.match(until) else "", "picture": picture})
+    notices.append(dict(_notice_fields(), id=uuid.uuid4().hex, text=text, picture=picture))
     config.save(notices=notices)
     return _done("Notice added. It shows on the TV within a minute.")
+
+
+LINK_SHOWS = ("qr", "text", "both")
+
+
+def _notice_fields():
+    """The heading, end date and how a web address shows, from the notice form."""
+    until = request.form.get("until", "").strip()
+    link = request.form.get("link", "qr")
+    return {"heading": request.form.get("heading", "").strip()[:60], "until": until if DATE.match(until) else "",
+            "link": link if link in LINK_SHOWS else "qr"}
+
+
+@app.post("/setup/notices/edit")
+@_guarded
+def setup_notice_edit():
+    notices = config.get("notices")
+    notice = next((n for n in notices if n.get("id") == request.form.get("id")), None)
+    if not notice:
+        return _done("Notice not found.", "err")
+    upload = request.files.get("picture")
+    data = upload.read() if upload else b""
+    picture = notice.get("picture", "")
+    if data:
+        try:
+            picture = notice_images.save(data)
+        except ValueError as error:
+            return _done(str(error), "err")
+        notice_images.remove(notice.get("picture"))
+    elif request.form.get("remove_picture") == "1":
+        notice_images.remove(picture)
+        picture = ""
+    text = request.form.get("text", "").strip()[:400]
+    if not text and not picture:
+        return _done("A notice needs a message or a poster.", "err")
+    notice.update(_notice_fields(), text=text, picture=picture)
+    config.save(notices=notices)
+    return _done("Notice saved. The TV shows the change within a minute.")
 
 
 @app.post("/setup/notices/remove")

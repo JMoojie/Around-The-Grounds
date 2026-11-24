@@ -779,18 +779,54 @@ class SettingsTests(unittest.TestCase):
 
 
 class NoticeLinkTests(unittest.TestCase):
-    def test_web_addresses_get_a_qr_code(self):
+    def setUp(self):
         self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+
+    def pages(self):
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-11-24T09:00:00+11:00")):
+            return screen._notice_pages()
+
+    def test_web_addresses(self):
         self.assertEqual(screen.notice_link("Tickets at https://club.example/tickets."), "https://club.example/tickets")
         self.assertEqual(screen.notice_link("Book: www.club.example/trivia!"), "https://www.club.example/trivia")
         self.assertEqual(screen.notice_link("Training Tuesday 5:30"), "")
-        config.save(notices=[{"id": "a", "heading": "Trivia", "text": "Book at www.club.example/trivia", "until": ""},
-                             {"id": "b", "heading": "", "text": "Training Tuesday", "until": ""}])
-        with mock.patch.object(scores, "_now", return_value=scores._local("2026-11-24T09:00:00+11:00")):
-            pages = screen._notice_pages()
-        self.assertIn('class="notice-card with-qr"', pages[0][1])
-        self.assertIn("Scan for more", pages[0][1])
-        self.assertNotIn("Scan for more", pages[1][1])
+        text = "Saturday 14 March, 7pm.\nTickets: www.club.example/tickets"
+        config.save(notices=[{"id": "q", "heading": "Night", "text": text, "until": ""},
+                             {"id": "t", "heading": "Night", "text": text, "until": "", "link": "text"},
+                             {"id": "b", "heading": "Night", "text": text, "until": "", "link": "both"},
+                             {"id": "n", "heading": "", "text": "Training Tuesday", "until": ""}])
+        qr_page, text_page, both_page, plain = (inner for _title, inner in self.pages())
+        # QR code (the default): the address isn't printed, "Tickets:" tidied to "Tickets", code underneath.
+        self.assertNotIn("www.club.example", qr_page)
+        self.assertIn("<p>Tickets</p>", qr_page)
+        self.assertLess(qr_page.index("<p>Tickets</p>"), qr_page.index("Scan for more"))
+        self.assertIn("www.club.example/tickets", text_page)
+        self.assertNotIn("Scan for more", text_page)
+        self.assertIn("www.club.example/tickets", both_page)
+        self.assertIn("Scan for more", both_page)
+        self.assertNotIn("Scan for more", plain)
+
+    def test_editing_a_notice(self):
+        client = server.app.test_client()
+        client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+        token = lambda: re.search(r'name="csrf" value="([^"]+)"', client.get("/setup").get_data(as_text=True)).group(1)
+        from io import BytesIO
+        client.post("/setup/notices/add", data={"csrf": token(), "heading": "Trivia", "text": "Friday 7pm",
+                                               "picture": (BytesIO(PNG), "p.png")}, content_type="multipart/form-data")
+        notice = config.get("notices")[0]
+        page = client.get(f"/setup?notice={notice['id']}").get_data(as_text=True)
+        self.assertIn("Edit notice", page)
+        self.assertIn("Friday 7pm</textarea>", page)
+        client.post("/setup/notices/edit", data={"csrf": token(), "id": notice["id"], "heading": "Trivia night",
+                                                "text": "Friday 4 December, 7pm. www.club.example", "link": "both",
+                                                "until": "2026-12-04", "remove_picture": "1"})
+        edited = config.get("notices")[0]
+        self.assertEqual((edited["id"], edited["heading"], edited["link"], edited["until"], edited["picture"]),
+                         (notice["id"], "Trivia night", "both", "2026-12-04", ""))
+        self.assertFalse((notice_images.folder() / notice["picture"]).exists())  # the old poster is gone
+        client.post("/setup/notices/edit", data={"csrf": token(), "id": notice["id"], "text": "",
+                                                "heading": "Trivia night"})
+        self.assertIn("Friday 4 December", config.get("notices")[0]["text"])  # refused: nothing left to show
 
 
 class PosterNoticeTests(unittest.TestCase):
