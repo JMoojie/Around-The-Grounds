@@ -80,11 +80,11 @@ def _top_line(game):
     parts = []
     if top.get("bat"):
         bat = top["bat"]
-        parts.append(f'<span class="top-label">Bat</span> {_e(bat["name"])} <strong>{bat["runs"]}'
+        parts.append(f'{_e(bat["name"])} <strong>{bat["runs"]}'
                      f'{"*" if bat["not_out"] else ""}</strong> ({bat["balls"]})')
     if top.get("bowl"):
         bowl = top["bowl"]
-        parts.append(f'<span class="top-label">Bowl</span> {_e(bowl["name"])} <strong>{bowl["wickets"]}/{bowl["runs"]}</strong>')
+        parts.append(f'{_e(bowl["name"])} <strong>{bowl["wickets"]}/{bowl["runs"]}</strong>')
     return f'<div class="game-top">{" &nbsp;·&nbsp; ".join(parts)}</div>'
 
 
@@ -583,8 +583,6 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .popup-game { font-size: 40px; margin-top: 14px; color: var(--muted); }
 .game-top { font-size: 27px; white-space: nowrap; overflow: hidden; }
 .game-top strong { color: var(--accent); }
-.top-label { font-size: 18px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
-             margin-right: 4px; }
 .cols3 .game-top { font-size: 23px; }
 .rows3 .game-top { font-size: 20px; }
 .notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);

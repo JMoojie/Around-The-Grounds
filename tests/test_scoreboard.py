@@ -242,8 +242,8 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(game["top"]["bat"], {"name": "Dana Hitter", "runs": 66, "balls": 52, "not_out": False})
         self.assertEqual(game["top"]["bowl"], {"name": "Eli Thrower", "wickets": 4, "runs": 14, "overs": "6"})
         card = screen._live_card(game, with_day=True)
-        self.assertIn('<span class="top-label">Bat</span> Dana Hitter <strong>66</strong> (52)', card)
-        self.assertIn('<span class="top-label">Bowl</span> Eli Thrower <strong>4/14</strong>', card)
+        self.assertIn('<div class="game-top">Dana Hitter <strong>66</strong> (52) &nbsp;·&nbsp; '
+                      'Eli Thrower <strong>4/14</strong></div>', card)
         self.assertIsNone(scores.summarise(LIVE, SCORECARD, {"r1"}, {}, "U13", TODAY)["top"])  # only finished games
 
     def test_washed_out_innings_show_no_score(self):
