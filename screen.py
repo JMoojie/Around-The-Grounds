@@ -67,9 +67,25 @@ def _live_card(game, with_day=False):
     return (
         f'<section class="game game-{state}"><div class="game-head"><span class="game-team">{_e(game["team"])}</span>'
         f'<span class="pills">{pill}</span></div><div class="game-meta">{meta}</div>{sides}'
-        f'<div class="game-note">{note}</div>{crease}'
+        f'<div class="game-note">{note}</div>{crease}{_top_line(game)}'
         f'<div class="game-venue">{_e(game["venue"])}</div></section>'
     )
+
+
+def _top_line(game):
+    """Finished games: the club's top bat and bowler."""
+    top = game.get("top")
+    if not top:
+        return ""
+    parts = []
+    if top.get("bat"):
+        bat = top["bat"]
+        parts.append(f'<span class="top-label">Bat</span> {_e(bat["name"])} <strong>{bat["runs"]}'
+                     f'{"*" if bat["not_out"] else ""}</strong> ({bat["balls"]})')
+    if top.get("bowl"):
+        bowl = top["bowl"]
+        parts.append(f'<span class="top-label">Bowl</span> {_e(bowl["name"])} <strong>{bowl["wickets"]}/{bowl["runs"]}</strong>')
+    return f'<div class="game-top">{" &nbsp;·&nbsp; ".join(parts)}</div>'
 
 
 def _trim(rows, keep, limit):
@@ -565,6 +581,12 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
 .popup-name { font-size: 110px; font-weight: 800; line-height: 1.1; }
 .popup-detail { font-size: 52px; margin-top: 20px; color: var(--accent); font-weight: 700; }
 .popup-game { font-size: 40px; margin-top: 14px; color: var(--muted); }
+.game-top { font-size: 27px; white-space: nowrap; overflow: hidden; }
+.game-top strong { color: var(--accent); }
+.top-label { font-size: 18px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+             margin-right: 4px; }
+.cols3 .game-top { font-size: 23px; }
+.rows3 .game-top { font-size: 20px; }
 .notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);
                padding: 60px 90px; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
 .notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
@@ -660,7 +682,8 @@ SCRIPT = """
   };
   const shortenNames = (el) => eachText(el, initials);
   const FIT = "td, .side-name, .ts-name, .tile-team, .tile-line, .tile-note, .game-team, .game-meta, .head-meta, "
-    + ".game-note, .game-venue, .facts, .earlier, .sc-name, .sponsor-name, .reached li, .popup-name, .popup-game";
+    + ".game-note, .game-venue, .facts, .earlier, .sc-name, .sponsor-name, .reached li, .popup-name, .popup-game, "
+    + ".game-top";
   const fitText = (root) => {
     if (!root) return;
     root.querySelectorAll(FIT).forEach((el) => {

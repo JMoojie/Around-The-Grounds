@@ -200,6 +200,33 @@ def _innings_detail(inning, names, in_progress):
     }
 
 
+def top_performers(scorecard, our_ids):
+    """The club's best with the bat and the ball in a game: {"bat": {...}, "bowl": {...}} (either may be None)."""
+    if not scorecard or not our_ids:
+        return None
+    full_names = {str(player.get("participantId")): player.get("name") or ""
+                  for team in scorecard.get("teams") or [] for player in team.get("players") or []}
+
+    def name(row):
+        return full_names.get(str(row.get("participantId"))) or row.get("playerShortName") or ""
+
+    bat = bowl = None
+    for inning in scorecard.get("innings") or []:
+        if str(inning.get("battingTeamId")) in our_ids:
+            for row in inning.get("batting") or []:
+                runs, balls = row.get("runsScored") or 0, row.get("ballsFaced") or 0
+                if runs and (bat is None or (runs, -balls) > (bat["runs"], -bat["balls"])):
+                    not_out = str(row.get("dismissalType") or "").casefold() in ("not out", "retired not out")
+                    bat = {"name": name(row), "runs": runs, "balls": balls, "not_out": not_out}
+        else:
+            for row in inning.get("bowling") or []:
+                wickets, conceded = row.get("wicketsTaken") or 0, row.get("runsConceded") or 0
+                if wickets and (bowl is None or (wickets, -conceded) > (bowl["wickets"], -bowl["runs"])):
+                    bowl = {"name": name(row), "wickets": wickets, "runs": conceded,
+                            "overs": _overs(row.get("oversBowled"))}
+    return {"bat": bat, "bowl": bowl} if bat or bowl else None
+
+
 def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", today=None):
     """One game for the screen, from its fixture record and (optional) scorecard."""
     team_names = team_names or {}
@@ -209,7 +236,9 @@ def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", 
     for team in record.get("teams") or []:
         team_id = str(team.get("id"))
         summary = summary_teams.get(team_id, {})
-        own = [i for i in innings if str(i.get("battingTeamId")) == team_id]
+        # Innings nobody batted in (e.g. a game washed out before a ball) don't count as a score.
+        own = [i for i in innings if str(i.get("battingTeamId")) == team_id
+               and (i.get("runsScored") or i.get("numberOfWicketsFallen") or _balls(i.get("oversBowled")))]
         if own:
             score = " & ".join(_innings_score(i) for i in own)
             overs = _overs(own[-1].get("oversBowled"))
@@ -261,6 +290,8 @@ def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", 
         "batters": batters,
         "bowler": bowler,
         "innings": detail,  # live games only: each innings' batting and bowling card
+        "top": (top_performers(scorecard, {side["id"] for side in sides if side["ours"]})
+                if state == "done" else None),  # finished games: the club's best bat and bowler
     }
 
 
@@ -403,7 +434,7 @@ def board(today=None):
         past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
         results_day = max(past) if past else None
         results_from = results_day - timedelta(days=COMING_DAYS - 1) if results_day else None
-        results = sorted((summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+        results = sorted((summarise(r, _with_scorecard(r), team_ids, names, g, today) for r, g in fixtures
                           if results_day and _first_day(r) and results_from <= _first_day(r) <= results_day),
                          key=lambda game: (game["start_sort"], game["team"]))
         if results:

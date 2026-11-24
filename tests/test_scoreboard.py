@@ -87,7 +87,9 @@ def patched(matches):
             {"id": "r1", "name": f"{OURS} U13 Mixed", "grades": [{"id": "g1", "name": "U13"}]},
             {"id": "r2", "name": "1st XI", "grades": [{"id": "g1", "name": "U13"}]}]}),
         mock.patch.object(pc, "fetch_grade_matches", return_value={"matches": matches}),
-        mock.patch.object(pc, "fetch_match_scorecard", return_value=SCORECARD),
+        # Only the live game has a scorecard here; others go by their fixture record.
+        mock.patch.object(pc, "fetch_match_scorecard",
+                          side_effect=lambda match_id, max_age=None: SCORECARD if match_id == "live1" else {}),
     ]
 
 
@@ -221,6 +223,36 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(titles[:2], ["Latest results · Seniors · Fri 20 – Sun 22 November",
                                       "Latest results · Juniors · Fri 20 – Sun 22 November"])
         self.assertIn("Sat · Result", html)
+
+    def test_top_performers_on_results(self):
+        played = {"status": "COMPLETED",
+                  "teams": [{"id": "r1", "players": [{"participantId": "p1", "name": "Dana Hitter"},
+                                                     {"participantId": "p2", "name": "Eli Thrower"}]}],
+                  "innings": [
+                      {"battingTeamId": "r1", "batting": [
+                          {"participantId": "p1", "runsScored": 66, "ballsFaced": 52, "dismissalType": "Caught"},
+                          {"participantId": "p2", "runsScored": 66, "ballsFaced": 70, "dismissalType": "Not Out"}]},
+                      {"battingTeamId": "o1", "bowling": [
+                          {"participantId": "p2", "wicketsTaken": 4, "runsConceded": 14, "oversBowled": 6},
+                          {"participantId": "p1", "wicketsTaken": 4, "runsConceded": 30, "oversBowled": 8}]}]}
+        done = fixture("done1", "COMPLETED", [team("r1", f"{OURS} U13 Mixed", "6-150", 30, club=True),
+                                              team("o1", "Visitors U13", "120", 28)], result="Tigers won by 30 runs")
+        game = scores.summarise(done, played, {"r1"}, {}, "U13", TODAY)
+        # Equal runs: fewer balls wins. Equal wickets: fewer runs wins.
+        self.assertEqual(game["top"]["bat"], {"name": "Dana Hitter", "runs": 66, "balls": 52, "not_out": False})
+        self.assertEqual(game["top"]["bowl"], {"name": "Eli Thrower", "wickets": 4, "runs": 14, "overs": "6"})
+        card = screen._live_card(game, with_day=True)
+        self.assertIn('<span class="top-label">Bat</span> Dana Hitter <strong>66</strong> (52)', card)
+        self.assertIn('<span class="top-label">Bowl</span> Eli Thrower <strong>4/14</strong>', card)
+        self.assertIsNone(scores.summarise(LIVE, SCORECARD, {"r1"}, {}, "U13", TODAY)["top"])  # only finished games
+
+    def test_washed_out_innings_show_no_score(self):
+        washed = {"status": "ABANDONED", "innings": [
+            {"battingTeamId": "r1", "runsScored": 0, "numberOfWicketsFallen": 0, "oversBowled": 0},
+            {"battingTeamId": "o1", "runsScored": 0, "numberOfWicketsFallen": 0, "oversBowled": 0}]}
+        off = fixture("rain", "ABANDONED", [team("r1", f"{OURS} 3rd XI", club=True), team("o1", "Rain FC")])
+        game = scores.summarise(off, washed, {"r1"}, {}, "", TODAY)
+        self.assertEqual([(s["score"], s["overs"]) for s in game["sides"]], [("", ""), ("", "")])
 
     def test_messages(self):
         self.assertIn("No games scheduled", screen.render_board(
