@@ -6,6 +6,7 @@ Environment variables (on the Pi: settings.env) give the starting values and
 the web server's address. The data folder is never committed to git.
 """
 
+import copy
 import json
 import os
 import threading
@@ -77,14 +78,15 @@ def load():
         except OSError:
             mtime = None
         if _cache["values"] is None or mtime != _cache["mtime"]:
-            values = dict(DEFAULTS)
+            values = copy.deepcopy(DEFAULTS)
             if mtime is not None:
                 try:
                     values.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
                 except (OSError, ValueError):
                     pass  # a damaged file: carry on with the defaults
             _cache.update(mtime=mtime, values=values)
-        return dict(_cache["values"])
+        # A copy, so changing a list (notices, sponsors) never changes the saved or default settings.
+        return copy.deepcopy(_cache["values"])
 
 
 def get(key):

@@ -214,7 +214,9 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
 
     today = scores._now().date()
     notice_rows = "".join(
-        f'<div class="sponsor notice-tile"><strong>{_e(n.get("heading") or "Notice")}</strong>'
+        f'<div class="sponsor notice-tile">'
+        + (f'<img src="/media/notices/{_e(n["picture"])}" alt="">' if n.get("picture") else "")
+        + f'<strong>{_e(n.get("heading") or "Notice")}</strong>'
         f'<div>{_e(n["text"][:120])}{"…" if len(n["text"]) > 120 else ""}</div>'
         f'<div class="note">{("Until " + _e(n["until"])) if n.get("until") else "No end date"}'
         f'{"" if notice_live(n, today) else " · finished, no longer shown"}</div>'
@@ -230,10 +232,14 @@ def setup_page(settings, token, found=None, flash=None, sponsor_found=None, edit
     {_form("/setup/notices/add", f'''<label for="notice-heading">Heading (optional)</label>
     <input id="notice-heading" name="heading" type="text" maxlength="60" placeholder="Presentation night">
     <label for="notice-text">Message</label>
-    <textarea id="notice-text" name="text" rows="3" maxlength="400" required></textarea>
+    <textarea id="notice-text" name="text" rows="3" maxlength="400"></textarea>
+    <label for="notice-picture">Picture or PDF of a poster (optional)</label>
+    <input id="notice-picture" name="picture" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+    <p class="note">A poster on its own fills the page; add a heading or message to show them beside it.
+    PDFs show their first page. Up to 12 MB.</p>
     <label for="notice-until">Show until (optional)</label>
     <input id="notice-until" name="until" type="date" min="{today.isoformat()}">
-    <button type="submit">Add notice</button>''', token)}
+    <button type="submit">Add notice</button>''', token, ' enctype="multipart/form-data"')}
     </section>""")
 
     # ---- Sponsors

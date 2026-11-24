@@ -21,6 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import checkin
 import config
+import notice_images
 import extra_pages
 import playcricket as pc
 import popups
@@ -32,7 +33,7 @@ import sponsor_cards
 import system
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024  # uploads: 6 MB is plenty for a logo or sponsor slide
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # uploads: logos, sponsor slides, notice posters (PDFs too)
 MAX_SPONSORS = 20
 COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")
 SPONSOR_FILE = re.compile(r"^[0-9a-f]{32}\.(png|jpg|gif|webp|svg)$")
@@ -166,6 +167,13 @@ def logo():
     if not name:
         abort(404)
     return _image_response(send_from_directory(config.DATA_DIR, name, max_age=60))
+
+
+@app.get("/media/notices/<name>")
+def notice_picture(name):
+    if not notice_images.FILE.match(name):
+        abort(404)
+    return _image_response(send_from_directory(notice_images.folder(), name, max_age=3600))
 
 
 @app.get("/media/sponsors/<name>")
@@ -381,11 +389,19 @@ def setup_notice_add():
     if len(notices) >= MAX_NOTICES:
         return _done(f"There's room for {MAX_NOTICES} notices; remove one first.", "err")
     text = request.form.get("text", "").strip()[:400]
-    if not text:
-        return _done("Type the notice first.", "err")
+    upload = request.files.get("picture")
+    data = upload.read() if upload else b""
+    if not text and not data:
+        return _done("Type the notice, or add a picture or PDF of the poster.", "err")
+    picture = ""
+    if data:
+        try:
+            picture = notice_images.save(data)
+        except ValueError as error:
+            return _done(str(error), "err")
     until = request.form.get("until", "").strip()
     notices.append({"id": uuid.uuid4().hex, "heading": request.form.get("heading", "").strip()[:60],
-                    "text": text, "until": until if DATE.match(until) else ""})
+                    "text": text, "until": until if DATE.match(until) else "", "picture": picture})
     config.save(notices=notices)
     return _done("Notice added. It shows on the TV within a minute.")
 
@@ -394,7 +410,11 @@ def setup_notice_add():
 @_guarded
 def setup_notice_remove():
     wanted = request.form.get("id", "")
-    config.save(notices=[n for n in config.get("notices") if n.get("id") != wanted])
+    notices = config.get("notices")
+    for notice in notices:
+        if notice.get("id") == wanted:
+            notice_images.remove(notice.get("picture"))
+    config.save(notices=[n for n in notices if n.get("id") != wanted])
     return _done("Notice removed.")
 
 

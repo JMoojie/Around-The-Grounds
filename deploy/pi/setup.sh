@@ -20,7 +20,7 @@ apt-get update
 BROWSER_PACKAGE=chromium-browser
 apt-cache show chromium-browser >/dev/null 2>&1 || BROWSER_PACKAGE=chromium
 apt-get install -y --no-install-recommends \
-    python3-flask python3-requests python3-waitress python3-qrcode \
+    python3-flask python3-requests python3-waitress python3-qrcode poppler-utils \
     cage "$BROWSER_PACKAGE" fonts-noto-core curl git v4l-utils iw
 
 # The browser needs access to the screen, GPU and keyboard.

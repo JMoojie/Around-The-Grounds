@@ -344,7 +344,16 @@ def _notice_pages():
         size = " notice-long" if len(text) > 220 else " notice-medium" if len(text) > 110 else ""
         heading = f'<h2 class="notice-heading">{_e(notice["heading"])}</h2>' if notice.get("heading") else ""
         paragraphs = "".join(f"<p>{_e(line)}</p>" for line in text.splitlines() if line.strip())
-        pages.append(("Club notice", f'<div class="notice-card">{heading}<div class="notice-text{size}">{paragraphs}</div></div>'))
+        words = f'{heading}<div class="notice-text{size}">{paragraphs}</div>' if heading or paragraphs else ""
+        picture = notice.get("picture")
+        if picture:
+            poster = f'<img class="notice-poster" src="/media/notices/{_e(picture)}" alt="">'
+            # A poster on its own fills the page; with words, it sits beside them.
+            inner = (f'<div class="notice-card with-poster">{poster}<div class="notice-words">{words}</div></div>'
+                     if words else f'<div class="notice-poster-only">{poster}</div>')
+        else:
+            inner = f'<div class="notice-card">{words}</div>'
+        pages.append(("Club notice", inner))
     return pages
 
 
@@ -589,6 +598,12 @@ table.card-table tr.in td { font-weight: 800; color: var(--text); background: rg
               font-style: italic; vertical-align: middle; }
 .notice-card { height: 770px; background: var(--panel); border-radius: 24px; border-left: 14px solid var(--accent);
                padding: 60px 90px; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
+.notice-card.with-poster { flex-direction: row; align-items: center; gap: 60px; padding: 40px 60px; }
+.notice-card.with-poster .notice-poster { max-width: 55%; max-height: 690px; object-fit: contain; border-radius: 12px; }
+.notice-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.notice-poster-only { height: 770px; display: flex; align-items: center; justify-content: center; }
+.notice-poster-only .notice-poster { max-width: 100%; max-height: 770px; object-fit: contain; border-radius: 12px;
+                                     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4); }
 .notice-heading { margin: 0; font-size: 84px; line-height: 1.1; color: var(--accent); }
 .notice-text { font-size: 56px; line-height: 1.35; }
 .notice-text p { margin: 0 0 18px; }

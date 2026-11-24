@@ -29,6 +29,7 @@ import qr  # noqa: E402
 import provisioning  # noqa: E402
 import popups  # noqa: E402
 import checkin  # noqa: E402
+import notice_images  # noqa: E402
 
 CLUB = config.get("club_id")
 TODAY = date(2026, 11, 21)
@@ -767,6 +768,64 @@ class CheckinTests(unittest.TestCase):
         with mock.patch.object(scores, "live_board", return_value={"error": "Couldn't reach PlayCricket", "checked": ""}):
             client.get("/board")
         self.assertEqual(checkin.last_scores["status"], "error: Couldn't reach PlayCricket")
+
+
+class SettingsTests(unittest.TestCase):
+    def test_lists_are_copies(self):
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        config.get("notices").append({"id": "x"})  # changing what was handed out...
+        self.assertEqual(config.get("notices"), [])  # ...doesn't change the settings
+        self.assertEqual(config.DEFAULTS["notices"], [])
+
+
+class PosterNoticeTests(unittest.TestCase):
+    def setUp(self):
+        self.client = server.app.test_client()
+        self.addCleanup(lambda: config.SETTINGS_FILE.unlink(missing_ok=True))
+        self.client.post("/setup/pin", data={"pin": "2468", "again": "2468"})
+
+    def token(self):
+        return re.search(r'name="csrf" value="([^"]+)"', self.client.get("/setup").get_data(as_text=True)).group(1)
+
+    def add(self, data, name, **fields):
+        from io import BytesIO
+        return self.client.post("/setup/notices/add", data={"csrf": self.token(), "picture": (BytesIO(data), name), **fields},
+                                content_type="multipart/form-data")
+
+    def test_poster_notices(self):
+        self.add(PNG, "poster.png")  # a poster on its own
+        poster = config.get("notices")[0]
+        self.assertEqual(self.client.get(f"/media/notices/{poster['picture']}").data, PNG)
+        self.add(PNG, "trivia.png", heading="Trivia night", text="Friday 7pm")
+        with mock.patch.object(scores, "_now", return_value=scores._local("2026-11-24T09:00:00+11:00")):
+            pages = screen._notice_pages()
+        self.assertIn('<div class="notice-poster-only"><img class="notice-poster"', pages[0][1])
+        self.assertIn('class="notice-card with-poster"', pages[1][1])
+        self.assertIn("Trivia night", pages[1][1])
+        self.add(b"not a poster", "x.png")
+        self.assertEqual(len(config.get("notices")), 2)  # refused
+        self.client.post("/setup/notices/remove", data={"csrf": self.token(), "id": poster["id"]})
+        self.assertFalse((notice_images.folder() / poster["picture"]).exists())  # the picture goes too
+
+    def test_pdf_posters(self):
+        pdf = b"%PDF-1.7 a club poster"
+
+        def fake_pdftoppm(command, **kwargs):
+            Path(command[-1] + ".png").write_bytes(PNG)  # the first page, as a picture
+
+        with mock.patch.object(notice_images.shutil, "which", return_value="/usr/bin/pdftoppm"),              mock.patch.object(notice_images.subprocess, "run", side_effect=fake_pdftoppm):
+            self.add(pdf, "presentation-night.pdf")
+        picture = config.get("notices")[0]["picture"]
+        self.assertTrue(picture.endswith(".png"))
+        self.assertEqual((notice_images.folder() / picture).read_bytes(), PNG)
+        with mock.patch.object(notice_images.shutil, "which", return_value=None):
+            response = self.add(pdf, "poster.pdf")
+        self.client.get(response.headers["Location"])
+        self.assertEqual(len(config.get("notices")), 1)
+        with mock.patch.object(notice_images.shutil, "which", return_value=None):
+            with self.assertRaises(ValueError) as error:
+                notice_images.save(pdf)
+        self.assertIn("JPEG or PNG", str(error.exception))
 
 
 class DiscoverTests(unittest.TestCase):
