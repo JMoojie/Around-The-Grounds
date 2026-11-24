@@ -242,6 +242,8 @@ def summarise(record, scorecard, club_team_ids, team_names=None, grade_name="", 
     ground = " · ".join(str(part).strip() for part in
                         (venue.get("name"), (venue.get("playingSurface") or {}).get("name")) if str(part or "").strip())
     result = ((scorecard or {}).get("matchSummary") or {}).get("resultText") or record.get("resultText") or ""
+    if "(local time)" in result:
+        result = ""  # PlayCricket's start time standing in for a result that isn't there
     return {
         "id": record.get("id"),
         "team": sides[0]["name"] if sides else "",
@@ -396,12 +398,30 @@ def board(today=None):
                 events += milestones(r, scorecard, team_ids, names)
             return {"mode": "today", "coming": coming, "coming_day": coming_day, "coming_until": coming_until,
                     "games": _ordered(games), "events": events}
+        # The latest results: every game in the week up to the most recent game day
+        # (a weekend's Friday juniors, Saturday seniors and Sunday games together).
         past = [d for d in (_first_day(r) for r, _ in fixtures) if d and d < today]
         results_day = max(past) if past else None
-        results = [summarise(r, None, team_ids, names, g, today) for r, g in fixtures
-                   if results_day and _first_day(r) == results_day]
-    return {"mode": "between", "results": _ordered(results), "results_day": results_day,
+        results_from = results_day - timedelta(days=COMING_DAYS - 1) if results_day else None
+        results = sorted((summarise(r, None, team_ids, names, g, today) for r, g in fixtures
+                          if results_day and _first_day(r) and results_from <= _first_day(r) <= results_day),
+                         key=lambda game: (game["start_sort"], game["team"]))
+        if results:
+            results_from = min(_local(game["start_sort"]).date() for game in results)
+    return {"mode": "between", "results": results, "results_day": results_day, "results_from": results_from,
             "coming": coming, "coming_day": coming_day, "coming_until": coming_until}
+
+
+JUNIOR = re.compile(r"^(u|under)[ -]?\d", re.I)
+
+
+def is_junior(game):
+    """A junior team: its name (or, failing that, its grade) starts with an age group (U10, U13,
+    Under 15 ...). A team called "... XI" is always senior."""
+    team = game.get("team") or ""
+    if JUNIOR.match(team):
+        return True
+    return " xi" not in f" {team.lower()}" and bool(JUNIOR.match(game.get("grade") or ""))
 
 
 def _player_name(participant):

@@ -204,6 +204,24 @@ class ScreenTests(unittest.TestCase):
         self.assertIn('data-title="Coming up · Saturday 28 November"', html)
         self.assertIn("Old Rivals won by 7 wickets", html)
 
+    def test_the_weekends_results_seniors_and_juniors(self):
+        friday = fixture("fri", "COMPLETED", [team("r5", f"{OURS} U13 Mixed", "4-80", 20, club=True),
+                                              team("o5", "Juniors FC", "78", 19.4)],
+                         start="2026-11-20T17:15:00.0000000+11:00", result="Tigers won by 6 wickets")
+        sunday = fixture("sun", "COMPLETED", [team("r6", f"{OURS} U18", "120", 30, club=True), team("o6", "Sunday CC", "2-121", 25)],
+                         start="2026-11-22T12:00:00.0000000+11:00", result="Sunday CC won by 8 wickets")
+        older = fixture("old2", "COMPLETED", [team("r7", f"{OURS} 4th XI", "99", 40, club=True), team("o7", "Long Ago", "3-100", 20)],
+                        start="2026-11-07T13:00:00.0000000+11:00")
+        saturday = dict(LAST_WEEK, matchSchedule=[{"matchDay": 1, "startDateTime": "2026-11-21T13:00:00.0000000+11:00"}])
+        result = run_board([older, saturday, friday, sunday, NEXT_WEEK], today=date(2026, 11, 24))
+        self.assertEqual([g["team"] for g in result["results"]], ["U13 Mixed", "2nd XI", "U18"])  # not the 7th
+        self.assertTrue(scores.is_junior(result["results"][0]) and not scores.is_junior(result["results"][1]))
+        html = screen.render_board(result)
+        titles = re.findall(r'data-title="([^"]+)"', html)
+        self.assertEqual(titles[:2], ["Latest results · Seniors · Fri 20 – Sun 22 November",
+                                      "Latest results · Juniors · Fri 20 – Sun 22 November"])
+        self.assertIn("Sat · Result", html)
+
     def test_messages(self):
         self.assertIn("No games scheduled", screen.render_board(
             {"mode": "between", "results": [], "coming": [], "results_day": None, "coming_day": None}))

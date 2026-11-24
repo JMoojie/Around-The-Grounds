@@ -30,9 +30,10 @@ def _live_card(game, with_day=False):
     if game.get("tbc"):
         start = "Date TBC"
     pill = {"live": '<span class="pill pill-live">LIVE</span>',
-            "done": '<span class="pill pill-done">Result</span>',
-            "off": '<span class="pill pill-off">Abandoned</span>',
-            "unscored": '<span class="pill pill-off">No live score</span>'}.get(
+            "done": f'<span class="pill pill-done">{_e(game.get("weekday", "")) + " · " if with_day and game.get("weekday") else ""}Result</span>',
+            "off": f'<span class="pill pill-off">{_e(game.get("weekday", "")) + " · " if with_day and game.get("weekday") else ""}Abandoned</span>',
+            "unscored": (f'<span class="pill pill-off">{_e(game.get("weekday", ""))} · No scores</span>' if with_day
+                         else '<span class="pill pill-off">No live score</span>')}.get(
         state, f'<span class="pill pill-soon">{_e(start or "Today")}</span>')
     if game.get("day"):
         pill = f'<span class="pill pill-day">Day {game["day"]}</span>' + pill
@@ -46,6 +47,8 @@ def _live_card(game, with_day=False):
     if state == "upcoming":
         note = (f"Starts {_e(start)} · {'Home' if game['home'] else 'Away'}" if game["start"] else
                 "Date and time to be confirmed" if game.get("tbc") else "")
+    elif state == "unscored" and with_day:
+        note = "No scores recorded on PlayCricket"  # an earlier game that was never scored
     elif state == "unscored":
         note = f"Started {_e(game['start'])} · result to come"
     else:
@@ -264,6 +267,19 @@ def _setup_message(board):
             f'<ol>{items}</ol></div>{f"<div class=qr-tiles>{tiles}</div>" if tiles else ""}</div>')
 
 
+def _results_pages(board):
+    """The latest results: seniors and juniors on pages of their own (one page if the club has only one)."""
+    import scores
+
+    when = _days(board.get("results_from"), board.get("results_day"))
+    seniors = [g for g in board["results"] if not scores.is_junior(g)]
+    juniors = [g for g in board["results"] if scores.is_junior(g)]
+    if seniors and juniors:
+        return (_grid_pages(f"Latest results · Seniors · {when}", seniors, with_day=True)
+                + _grid_pages(f"Latest results · Juniors · {when}", juniors, with_day=True))
+    return _grid_pages(f"Latest results · {when}", board["results"], with_day=True)
+
+
 def _sent(spread):
     """Pages another program sent (extra_pages.py): those shown in a block, or
     (spread=True) those spaced out through the rotation. The first page sent
@@ -371,7 +387,7 @@ def render_board(board):
         pages = _spread(_grid_pages("Today\'s games", board["games"]) + _extra_pages(board), _sent(spread=True) + _notice_pages())
     else:
         if board.get("results") and config.get("show_results"):
-            pages += _grid_pages(f"Latest results · {_day(board['results_day'])}", board["results"])
+            pages += _results_pages(board)
         pages = _spread(pages + _extra_pages(board), _sent(spread=True) + _notice_pages())
         if not pages:
             pages = [(config.get("title"), _message("No games scheduled."))]
